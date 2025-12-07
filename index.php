@@ -4,6 +4,7 @@ session_start();
 
 // Incluir el archivo de funciones centralizadas
 require_once 'funciones.php';
+require_once 'funciones_personalizacion.php';
 
 // Verificar si el sistema está instalado
 if (!is_installed()) {
@@ -31,9 +32,12 @@ if ($conn->connect_error) {
 
 // Lógica de login
 $login_error = '';
+$branding_user_id = null;
+$entered_username = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
     $username = $conn->real_escape_string(trim($_POST['username']));
     $password = $_POST['password'];
+    $entered_username = $username;
 
     // Prioridad para administradores
     $stmt = $conn->prepare("SELECT id, username, password FROM admin WHERE username = ?");
@@ -61,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
 
     if ($result->num_rows > 0) {
         $user = $result->fetch_assoc();
+        $branding_user_id = (int)$user['id'];
         if (password_verify($password, $user['password'])) {
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['username'];
@@ -77,7 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
 
 // Obtener todas las configuraciones para usar el logo
 $settings = SimpleCache::get_settings($conn);
-$page_title = $settings['PAGE_TITLE'] ?? 'Sistema de Códigos';
+$admin_config = $branding_user_id ? getAdminConfigForUser($conn, $branding_user_id) : null;
+$page_title = $admin_config['site_title'] ?? ($settings['PAGE_TITLE'] ?? 'Sistema de Códigos');
+$logo_path = !empty($admin_config['logo_url'])
+    ? BASE_URL . 'images/admin_logos/' . $admin_config['logo_url']
+    : BASE_URL . 'images/logo/' . ($settings['LOGO'] ?? 'logo.png');
+$welcome_message = trim($admin_config['welcome_message'] ?? '') !== '' ? $admin_config['welcome_message'] : 'Accede a tu sistema de códigos';
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -271,10 +281,10 @@ $conn->close();
     <div class="login-card">
         <div class="login-header">
             <div class="login-logo">
-                <img src="/images/logo/<?= htmlspecialchars($settings['LOGO'] ?? 'logo.png'); ?>" alt="Logo del Sistema">
+                <img src="<?= htmlspecialchars($logo_path); ?>" alt="Logo del Sistema">
             </div>
-            <h1 class="login-title">Iniciar Sesión</h1>
-            <p class="login-subtitle">Accede a tu sistema de códigos</p>
+            <h1 class="login-title"><?= htmlspecialchars($page_title); ?></h1>
+            <p class="login-subtitle"><?= htmlspecialchars($welcome_message); ?></p>
         </div>
 
         <?php if (!empty($login_error)): ?>
@@ -285,7 +295,7 @@ $conn->close();
 
         <form class="login-form" method="POST" action="index.php">
             <div class="form-group">
-                <input type="text" class="form-input" name="username" placeholder="Usuario" required autofocus autocomplete="username">
+                <input type="text" class="form-input" name="username" placeholder="Usuario" required autofocus autocomplete="username" value="<?= htmlspecialchars($entered_username); ?>">
                 <i class="fas fa-user form-icon"></i>
             </div>
 
