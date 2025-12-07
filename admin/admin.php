@@ -2351,6 +2351,146 @@ function testAllEnabledServers() {
 // function escapeHtml(unsafe) { ... }
 </script>
 
+        <style>
+            .user-cards-container {
+                display: flex;
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .user-role-card {
+                border: 1px solid var(--glow-border);
+                border-radius: 14px;
+                padding: 1rem;
+                background: linear-gradient(135deg, rgba(54, 46, 90, 0.9), rgba(38, 32, 62, 0.9));
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+                transition: transform 0.2s ease, border-color 0.2s ease;
+            }
+
+            .user-role-card:hover {
+                transform: translateY(-2px);
+                border-color: var(--accent-green);
+            }
+
+            .user-card-main {
+                display: flex;
+                align-items: flex-start;
+                gap: 1rem;
+            }
+
+            .user-card-avatar {
+                width: 48px;
+                height: 48px;
+                border-radius: 14px;
+                background: var(--accent-green);
+                color: var(--bg-purple-dark);
+                display: grid;
+                place-items: center;
+                font-size: 1.25rem;
+                flex-shrink: 0;
+            }
+
+            .user-card-avatar.subtle {
+                background: rgba(255, 255, 255, 0.08);
+                color: #fff;
+            }
+
+            .user-card-body {
+                flex: 1;
+            }
+
+            .user-card-title-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                justify-content: space-between;
+            }
+
+            .badge-role {
+                padding: 0.25rem 0.55rem;
+                border-radius: 999px;
+                font-size: 0.75rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+
+            .badge-role-admin { background: rgba(0, 123, 255, 0.15); color: #66b2ff; border: 1px solid rgba(102, 178, 255, 0.4); }
+            .badge-role-user { background: rgba(108, 117, 125, 0.2); color: #ced4da; border: 1px solid rgba(206, 212, 218, 0.35); }
+
+            .user-card-meta {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                color: var(--text-secondary);
+                font-size: 0.95rem;
+            }
+
+            .user-card-meta .separator { opacity: 0.5; }
+
+            .user-card-subtext {
+                color: var(--text-secondary);
+                font-size: 0.9rem;
+                margin-top: 0.35rem;
+            }
+
+            .user-card-status {
+                margin-top: 0.35rem;
+                font-weight: 600;
+            }
+
+            .user-card-status.status-ready { color: #4ade80; }
+            .user-card-status.status-warning { color: #f9d86a; }
+
+            .admin-preview-logo {
+                width: 56px;
+                height: 56px;
+                border-radius: 14px;
+                background: rgba(102, 178, 255, 0.15);
+                color: #66b2ff;
+                display: grid;
+                place-items: center;
+                font-size: 1.5rem;
+                border: 1px solid rgba(102, 178, 255, 0.35);
+            }
+
+            .user-card-actions {
+                display: flex;
+                flex-direction: column;
+                gap: 0.35rem;
+                align-items: flex-end;
+            }
+
+            .user-card-children {
+                margin-top: 1rem;
+                padding-left: 1.25rem;
+                border-left: 2px dashed rgba(255, 255, 255, 0.08);
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+
+            .role-section-heading {
+                font-weight: 700;
+                color: #fff;
+                margin-bottom: 0.35rem;
+                margin-top: 0.75rem;
+                letter-spacing: 0.25px;
+            }
+
+            @media (max-width: 768px) {
+                .user-card-main {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+
+                .user-card-actions {
+                    width: 100%;
+                    align-items: stretch;
+                }
+            }
+        </style>
+
         <div class="tab-pane fade <?= $active_tab === 'users' ? 'show active' : '' ?>" id="users" role="tabpanel">
             <div class="admin-card">
                 <div class="admin-card-header">
@@ -2386,99 +2526,233 @@ function testAllEnabledServers() {
                     }
                     $users_stmt->close();
                 }
+
+                // Estadísticas rápidas por usuario
+                $user_email_counts = [];
+                $user_subject_counts = [];
+                $email_counts_res = $conn->query("SELECT user_id, COUNT(id) as count FROM user_authorized_emails GROUP BY user_id");
+                if ($email_counts_res) {
+                    while ($row = $email_counts_res->fetch_assoc()) {
+                        $user_email_counts[$row['user_id']] = (int)$row['count'];
+                    }
+                }
+                $subject_counts_res = $conn->query("SELECT user_id, COUNT(DISTINCT subject_keyword) as count FROM user_platform_subjects GROUP BY user_id");
+                if ($subject_counts_res) {
+                    while ($row = $subject_counts_res->fetch_assoc()) {
+                        $user_subject_counts[$row['user_id']] = (int)$row['count'];
+                    }
+                }
+
+                // Conteo de usuarios por Admin para la jerarquía visual
+                $managed_user_counts = [];
+                $managed_res = $conn->query("SELECT created_by_admin_id, COUNT(*) as total FROM users WHERE role = 'user' AND created_by_admin_id IS NOT NULL GROUP BY created_by_admin_id");
+                if ($managed_res) {
+                    while ($row = $managed_res->fetch_assoc()) {
+                        $managed_user_counts[$row['created_by_admin_id']] = (int)$row['total'];
+                    }
+                }
+
+                // Configuración de personalización de admins (solo lectura para superadmin)
+                $admin_configurations = [];
+                if ($current_user_role === 'superadmin') {
+                    $config_res = $conn->query("SELECT admin_id, site_title, logo_url, web_url, telegram_url, whatsapp_url, welcome_message FROM admin_configurations");
+                    if ($config_res) {
+                        while ($row = $config_res->fetch_assoc()) {
+                            $admin_configurations[$row['admin_id']] = $row;
+                        }
+                    }
+                }
+
+                // Agrupar usuarios por rol para la vista jerárquica
+                $admins_list = [];
+                $users_by_admin = [];
+                $direct_users = [];
+                foreach ($users as $user_item) {
+                    if ($user_item['role'] === 'admin') {
+                        $admins_list[] = $user_item;
+                        continue;
+                    }
+
+                    if (!empty($user_item['created_by_admin_id'])) {
+                        $users_by_admin[$user_item['created_by_admin_id']][] = $user_item;
+                    } else {
+                        $direct_users[] = $user_item;
+                    }
+                }
                 ?>
 
-                <div class="table-responsive">
-                    <table class="table-admin" id="usersTable">
-                        <thead>
-                            <tr>
-                                <th><i class="fas fa-hashtag me-2"></i>ID</th>
-                                <th><i class="fas fa-user me-2"></i>Usuario</th>
-                                <th><i class="fab fa-telegram me-2"></i>Telegram ID</th>
-                                <th><i class="fas fa-user-shield me-2"></i>Rol</th>
-                                <th><i class="fas fa-user-tag me-2"></i>Creador</th>
-                                <th><i class="fas fa-toggle-on me-2"></i>Estado</th>
-                                <th><i class="fas fa-calendar me-2"></i>Fecha Creación</th>
-                                <th><i class="fas fa-cogs me-2"></i>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($users)): ?>
-                                <tr>
-                                    <td colspan="8" class="text-center py-4">
-                                        <i class="fas fa-users fa-2x text-muted mb-2"></i>
-                                        <p class="text-muted mb-0">No hay usuarios registrados</p>
-                                    </td>
-                                </tr>
-                            <?php else: ?>
-                                <?php foreach ($users as $user): ?>
-                                <?php
-                                    $is_foreign_admin_user = ($current_user_role === 'superadmin' && !empty($user['created_by_admin_id']) && $user['role'] === 'user');
-                                    $can_manage_user = ($current_user_role === 'superadmin' && !$is_foreign_admin_user)
-                                        || ($current_user_role === 'admin' && $user['role'] === 'user' && (int)$user['created_by_admin_id'] === (int)$current_user_id);
-                                ?>
-                                <tr>
-                                    <td><?= htmlspecialchars($user['id']) ?></td>
-                                    <td>
-                                        <i class="fas fa-user-circle me-2 text-primary"></i>
-                                        <?= htmlspecialchars($user['username']) ?>
-                                        <?php if (!empty($user['created_by_admin_id']) && !empty($user['creator_username'])): ?>
-                                            <span class="badge-admin badge-info-admin ms-2"><i class="fas fa-user-tag me-1"></i><?= htmlspecialchars($user['creator_username']) ?></span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td><?= htmlspecialchars($user['telegram_id'] ?? '') ?></td>
-                                    <td>
-                                        <?php if ($user['role'] === 'superadmin'): ?>
-                                            <span class="badge-admin badge-warning-admin">Super Admin</span>
-                                        <?php elseif ($user['role'] === 'admin'): ?>
-                                            <span class="badge-admin badge-primary-admin">Admin</span>
-                                        <?php else: ?>
-                                            <span class="badge-admin badge-secondary-admin">Usuario</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($user['creator_username'])): ?>
-                                            <?= htmlspecialchars($user['creator_username']) ?>
-                                        <?php else: ?>
-                                            <span class="text-muted">Super Admin</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php if ((int)$user['status'] === 1): ?>
-                                            <span class="badge-admin badge-success-admin">
-                                                <i class="fas fa-check"></i> Activo
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="badge-admin badge-danger-admin">
-                                                <i class="fas fa-times"></i> Inactivo
-                                            </span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <i class="fas fa-calendar-alt me-2 text-muted"></i>
-                                        <?= htmlspecialchars($user['created_at']) ?>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex gap-sm">
-                                            <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="editUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>', '<?= htmlspecialchars($user['telegram_id'] ?? '') ?>', <?= (int)$user['status'] ?>)" <?= $can_manage_user ? '' : 'disabled' ?>>
-                                                <i class="fas fa-edit"></i> Editar
-                                            </button>
-                                            <button class="btn-admin btn-danger-admin btn-sm-admin" onclick="deleteUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')" <?= $can_manage_user ? '' : 'disabled' ?>>
-                                                <i class="fas fa-trash"></i> Eliminar
-                                            </button>
+                <div class="user-cards-container" id="userCardsContainer">
+                    <?php if (empty($users)): ?>
+                        <div class="empty-state text-center py-4">
+                            <i class="fas fa-users fa-2x text-muted mb-2"></i>
+                            <p class="text-muted mb-0">No hay usuarios registrados</p>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($current_user_role === 'superadmin' && !empty($admins_list)): ?>
+                        <div class="role-section-heading">🔷 Admins (<?= count($admins_list) ?>)</div>
+                        <?php foreach ($admins_list as $admin_user): ?>
+                            <?php
+                                $admin_id = (int)$admin_user['id'];
+                                $admin_email_count = $user_email_counts[$admin_id] ?? 0;
+                                $admin_subject_count = $user_subject_counts[$admin_id] ?? 0;
+                                $managed_count = $managed_user_counts[$admin_id] ?? 0;
+                                $admin_config = $admin_configurations[$admin_id] ?? null;
+                            ?>
+                            <div class="user-role-card role-admin" data-username="<?= htmlspecialchars($admin_user['username']) ?>" data-role="admin" data-creator="superadmin">
+                                <div class="user-card-main">
+                                    <div class="user-card-avatar">
+                                        <i class="fas fa-user-tie"></i>
+                                    </div>
+                                    <div class="user-card-body">
+                                        <div class="user-card-title-row">
+                                            <h5 class="mb-1">👤 <?= htmlspecialchars($admin_user['username']) ?></h5>
+                                            <span class="badge-role badge-role-admin">ADMIN</span>
                                         </div>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                            <tr class="no-results-row" style="display: none;">
-                                <td colspan="6" class="text-center py-4">
-                                    <i class="fas fa-search fa-2x text-muted mb-2"></i>
-                                    <p class="text-muted mb-0">No se encontraron resultados para tu búsqueda.</p>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                        <div class="user-card-meta">
+                                            <span><i class="fas fa-envelope me-1"></i><?= $admin_email_count ?> correos</span>
+                                            <span class="separator">|</span>
+                                            <span><i class="fas fa-tags me-1"></i><?= $admin_subject_count ?> asuntos</span>
+                                        </div>
+                                        <div class="user-card-subtext">
+                                            <i class="fas fa-users me-1"></i>Tiene <?= $managed_count ?> usuario<?= $managed_count === 1 ? '' : 's' ?> bajo su gestión
+                                        </div>
+                                    </div>
+                                    <div class="user-card-actions">
+                                        <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="editUser(<?= $admin_id ?>, '<?= htmlspecialchars($admin_user['username']) ?>', '<?= htmlspecialchars($admin_user['telegram_id'] ?? '') ?>', <?= (int)$admin_user['status'] ?>)">
+                                            <i class="fas fa-edit"></i> Ver Detalles
+                                        </button>
+                                        <button class="btn-admin btn-info-admin btn-sm-admin" data-bs-toggle="modal" data-bs-target="#adminConfigPreviewModal" data-admin-name="<?= htmlspecialchars($admin_user['username']) ?>" data-site-title="<?= htmlspecialchars($admin_config['site_title'] ?? 'Sin personalización') ?>" data-message="<?= htmlspecialchars($admin_config['welcome_message'] ?? 'Este admin aún no configuró su panel') ?>" data-web="<?= htmlspecialchars($admin_config['web_url'] ?? '') ?>" data-telegram="<?= htmlspecialchars($admin_config['telegram_url'] ?? '') ?>" data-whatsapp="<?= htmlspecialchars($admin_config['whatsapp_url'] ?? '') ?>" data-logo="<?= htmlspecialchars($admin_config['logo_url'] ?? '') ?>">
+                                            <i class="fas fa-palette"></i> Configuración
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <?php if (!empty($users_by_admin[$admin_id])): ?>
+                                    <div class="user-card-children">
+                                        <?php foreach ($users_by_admin[$admin_id] as $child_user): ?>
+                                            <?php
+                                                $child_email = $user_email_counts[$child_user['id']] ?? 0;
+                                                $child_subject = $user_subject_counts[$child_user['id']] ?? 0;
+                                                $is_configured = $child_email > 0 && $child_subject > 0;
+                                            ?>
+                                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($child_user['username']) ?>" data-role="user" data-creator="<?= htmlspecialchars($admin_user['username']) ?>">
+                                                <div class="user-card-main">
+                                                    <div class="user-card-avatar subtle">
+                                                        <i class="fas fa-user"></i>
+                                                    </div>
+                                                    <div class="user-card-body">
+                                                        <div class="user-card-title-row">
+                                                            <h6 class="mb-1">👤 <?= htmlspecialchars($child_user['username']) ?></h6>
+                                                            <span class="badge-role badge-role-user">USUARIO</span>
+                                                        </div>
+                                                        <div class="user-card-meta">
+                                                            <span><i class="fas fa-envelope me-1"></i><?= $child_email ?> correos</span>
+                                                            <span class="separator">|</span>
+                                                            <span><i class="fas fa-tags me-1"></i><?= $child_subject ?> asuntos</span>
+                                                        </div>
+                                                        <div class="user-card-subtext">
+                                                            🏷️ Creado por: <?= htmlspecialchars($admin_user['username']) ?>
+                                                        </div>
+                                                        <div class="user-card-status <?= $is_configured ? 'status-ready' : 'status-warning' ?>">
+                                                            <?= $is_configured ? '✅ Configurado' : '🔒 Solo lectura' ?>
+                                                        </div>
+                                                    </div>
+                                                    <div class="user-card-actions">
+                                                        <button class="btn-admin btn-secondary-admin btn-sm-admin" onclick="viewUserConfigOnly('<?= htmlspecialchars($child_user['username']) ?>')" disabled>
+                                                            <i class="fas fa-eye"></i> Ver Config
+                                                        </button>
+                                                        <small class="text-muted">Gestionado por <?= htmlspecialchars($admin_user['username']) ?></small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+
+                    <?php if ($current_user_role === 'superadmin' && !empty($direct_users)): ?>
+                        <div class="role-section-heading">👥 Usuarios Directos (<?= count($direct_users) ?>)</div>
+                        <?php foreach ($direct_users as $direct_user): ?>
+                            <?php
+                                $direct_email = $user_email_counts[$direct_user['id']] ?? 0;
+                                $direct_subject = $user_subject_counts[$direct_user['id']] ?? 0;
+                                $direct_configured = $direct_email > 0 && $direct_subject > 0;
+                            ?>
+                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($direct_user['username']) ?>" data-role="user" data-creator="superadmin">
+                                <div class="user-card-main">
+                                    <div class="user-card-avatar subtle">
+                                        <i class="fas fa-user"></i>
+                                    </div>
+                                    <div class="user-card-body">
+                                        <div class="user-card-title-row">
+                                            <h6 class="mb-1">👤 <?= htmlspecialchars($direct_user['username']) ?></h6>
+                                            <span class="badge-role badge-role-user">USUARIO</span>
+                                        </div>
+                                        <div class="user-card-meta">
+                                            <span><i class="fas fa-envelope me-1"></i><?= $direct_email ?> correos</span>
+                                            <span class="separator">|</span>
+                                            <span><i class="fas fa-tags me-1"></i><?= $direct_subject ?> asuntos</span>
+                                        </div>
+                                        <div class="user-card-subtext">🏷️ Creado por: SuperAdmin</div>
+                                        <div class="user-card-status <?= $direct_configured ? 'status-ready' : 'status-warning' ?>">
+                                            <?= $direct_configured ? '✅ Configurado' : '⚠️ Pendiente de permisos' ?>
+                                        </div>
+                                    </div>
+                                    <div class="user-card-actions">
+                                        <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="editUser(<?= (int)$direct_user['id'] ?>, '<?= htmlspecialchars($direct_user['username']) ?>', '<?= htmlspecialchars($direct_user['telegram_id'] ?? '') ?>', <?= (int)$direct_user['status'] ?>)">
+                                            <i class="fas fa-edit"></i> Editar
+                                        </button>
+                                        <button class="btn-admin btn-success-admin btn-sm-admin" onclick="goToAssignments(<?= (int)$direct_user['id'] ?>)">
+                                            <i class="fas fa-shield-alt"></i> Permisos
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+
+                    <?php if ($current_user_role === 'admin' && !empty($users)): ?>
+                        <div class="role-section-heading">👥 Mis Usuarios (<?= count($users) ?>)</div>
+                        <?php foreach ($users as $user): ?>
+                            <?php
+                                $email_count = $user_email_counts[$user['id']] ?? 0;
+                                $subject_count = $user_subject_counts[$user['id']] ?? 0;
+                                $is_configured = $email_count > 0 && $subject_count > 0;
+                            ?>
+                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($user['username']) ?>" data-role="user" data-creator="<?= htmlspecialchars($user['creator_username'] ?? 'admin') ?>">
+                                <div class="user-card-main">
+                                    <div class="user-card-avatar subtle">
+                                        <i class="fas fa-user"></i>
+                                    </div>
+                                    <div class="user-card-body">
+                                        <div class="user-card-title-row">
+                                            <h6 class="mb-1">👤 <?= htmlspecialchars($user['username']) ?></h6>
+                                            <span class="badge-role badge-role-user">USUARIO</span>
+                                        </div>
+                                        <div class="user-card-meta">
+                                            <span><i class="fas fa-envelope me-1"></i><?= $email_count ?> correos</span>
+                                            <span class="separator">|</span>
+                                            <span><i class="fas fa-tags me-1"></i><?= $subject_count ?> asuntos</span>
+                                        </div>
+                                        <div class="user-card-status <?= $is_configured ? 'status-ready' : 'status-warning' ?>">
+                                            <?= $is_configured ? '✅ Configurado correctamente' : '⚠️ Sin permisos asignados' ?>
+                                        </div>
+                                    </div>
+                                    <div class="user-card-actions">
+                                        <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="editUser(<?= (int)$user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>', '<?= htmlspecialchars($user['telegram_id'] ?? '') ?>', <?= (int)$user['status'] ?>)">
+                                            <i class="fas fa-edit"></i> Editar
+                                        </button>
+                                        <button class="btn-admin btn-success-admin btn-sm-admin" onclick="goToAssignments(<?= (int)$user['id'] ?>)">
+                                            <i class="fas fa-shield-alt"></i> <?= $is_configured ? 'Permisos' : 'Asignar Permisos' ?>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -3349,6 +3623,34 @@ function collapseAllUsers() {
     });
 }
 
+function goToAssignments(userId) {
+    const tabButton = document.getElementById('asignaciones-tab');
+    if (!tabButton) return;
+
+    const tab = new bootstrap.Tab(tabButton);
+    tab.show();
+
+    setTimeout(() => {
+        toggleUserPermissions(userId);
+        const content = document.getElementById(`permissions-content-${userId}`);
+        if (content) {
+            content.style.display = 'block';
+            content.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        const toggleBtn = document.getElementById(`toggle-btn-${userId}`);
+        const icon = toggleBtn ? toggleBtn.querySelector('i') : null;
+        if (toggleBtn && icon) {
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+            toggleBtn.innerHTML = '<i class="fas fa-chevron-up me-2"></i>Ocultar Permisos';
+        }
+    }, 300);
+}
+
+function viewUserConfigOnly(username) {
+    alert(`Solo lectura. La configuración de ${username} es gestionada por su Admin.`);
+}
+
 // Renderiza los chips de correos asignados para un usuario
 function renderUserEmailChips(userId) {
     const container = document.getElementById(`user-email-chips-${userId}`);
@@ -3675,6 +3977,42 @@ const style = document.createElement('style');
 style.textContent = additionalCSS;
 document.head.appendChild(style);
 </script>
+<div class="modal fade modal-admin" id="adminConfigPreviewModal" tabindex="-1" aria-labelledby="adminConfigPreviewLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="adminConfigPreviewLabel">
+                    <i class="fas fa-palette me-2"></i>
+                    Personalización del Admin
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="admin-preview-logo" id="adminConfigPreviewLogo">🎨</div>
+                    <div>
+                        <div class="text-muted small">Panel mostrado a los usuarios de</div>
+                        <h5 class="mb-0" id="adminConfigPreviewName">Admin</h5>
+                    </div>
+                </div>
+                <p class="mb-1 text-muted">Título del sitio</p>
+                <p class="fw-semibold" id="adminConfigPreviewTitle">Sin personalización</p>
+                <p class="mb-1 text-muted">Mensaje de bienvenida</p>
+                <p id="adminConfigPreviewMessage" class="fw-semibold">Este admin aún no configuró su panel.</p>
+                <div class="mt-3">
+                    <p class="mb-1 text-muted">Enlaces</p>
+                    <ul class="list-unstyled mb-0" id="adminConfigPreviewLinks"></ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span class="text-muted small">Solo lectura para SuperAdmin</span>
+                <button type="button" class="btn-admin btn-secondary-admin" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="modal fade modal-admin" id="addUserModal" tabindex="-1" aria-labelledby="addUserModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -5201,13 +5539,50 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    const adminConfigPreviewModal = document.getElementById('adminConfigPreviewModal');
+    if (adminConfigPreviewModal) {
+        adminConfigPreviewModal.addEventListener('show.bs.modal', event => {
+            const trigger = event.relatedTarget || null;
+            const adminName = trigger ? (trigger.getAttribute('data-admin-name') || 'Admin') : 'Admin';
+            const siteTitle = trigger ? (trigger.getAttribute('data-site-title') || 'Sin personalización') : 'Sin personalización';
+            const welcome = trigger ? (trigger.getAttribute('data-message') || 'Este admin aún no configuró su panel.') : 'Este admin aún no configuró su panel.';
+            const web = trigger ? (trigger.getAttribute('data-web') || '') : '';
+            const telegram = trigger ? (trigger.getAttribute('data-telegram') || '') : '';
+            const whatsapp = trigger ? (trigger.getAttribute('data-whatsapp') || '') : '';
+            const logo = trigger ? (trigger.getAttribute('data-logo') || '') : '';
+
+            document.getElementById('adminConfigPreviewName').textContent = adminName;
+            document.getElementById('adminConfigPreviewTitle').textContent = siteTitle;
+            document.getElementById('adminConfigPreviewMessage').textContent = welcome;
+
+            const logoBox = document.getElementById('adminConfigPreviewLogo');
+            if (logo) {
+                logoBox.style.backgroundImage = `url(../images/admin_logos/${logo})`;
+                logoBox.style.backgroundSize = 'cover';
+                logoBox.textContent = '';
+            } else {
+                logoBox.style.backgroundImage = '';
+                logoBox.textContent = '🎨';
+            }
+
+            const linksList = document.getElementById('adminConfigPreviewLinks');
+            linksList.innerHTML = '';
+            if (web) linksList.innerHTML += `<li><i class="fas fa-link me-2"></i><a href="${web}" target="_blank">Web personal</a></li>`;
+            if (telegram) linksList.innerHTML += `<li><i class="fab fa-telegram-plane me-2"></i><a href="${telegram}" target="_blank">Telegram</a></li>`;
+            if (whatsapp) linksList.innerHTML += `<li><i class="fab fa-whatsapp me-2"></i><a href="${whatsapp}" target="_blank">WhatsApp</a></li>`;
+            if (!linksList.innerHTML) {
+                linksList.innerHTML = '<li class="text-muted">Sin enlaces configurados</li>';
+            }
+        });
+    }
+
     // Configurar búsquedas en las tablas si existen
     if (typeof setupTableSearch === 'function') {
-        setupTableSearch('searchInputUsers', 'usersTable', [1, 2], 'usersSearchResultsInfo');
         setupTableSearch('searchInputEmails', 'emailsTable', [0], 'emailsSearchResultsInfo');
         setupTableSearch('searchInputPlatforms', 'platformsTable', [0], 'platformsSearchResultsInfo');
         setupTableSearch('searchInputAssignments', 'assignmentsTable', [0], 'assignmentsSearchResultsInfo');
     }
+    setupUserCardSearch();
 
     // ===== FUNCIÓN PARA DEBUGGING (OPCIONAL) =====
     window.forceReloadAllEmails = function() {
@@ -5934,6 +6309,60 @@ function setupCardSearch() {
     infoContainer.innerHTML = `Mostrando <span class="search-match">${userCards.length}</span> de ${userCards.length} usuarios.`;
 }
 
+function setupUserCardSearch() {
+    const searchInput = document.getElementById('searchInputUsers');
+    const infoContainer = document.getElementById('usersSearchResultsInfo');
+    const adminCards = Array.from(document.querySelectorAll('#userCardsContainer .user-role-card.role-admin'));
+    const directCards = Array.from(document.querySelectorAll('#userCardsContainer > .user-role-card:not(.role-admin)'));
+
+    if (!searchInput || !infoContainer) {
+        return;
+    }
+
+    const matchesFilter = (card, term) => {
+        if (!card) return false;
+        const username = (card.dataset.username || '').toLowerCase();
+        const role = (card.dataset.role || '').toLowerCase();
+        const creator = (card.dataset.creator || '').toLowerCase();
+        return username.includes(term) || role.includes(term) || creator.includes(term);
+    };
+
+    const updateResults = () => {
+        const filter = (searchInput.value || '').toLowerCase().trim();
+        const childCards = Array.from(document.querySelectorAll('.user-card-children .user-role-card'));
+        let visibleCount = 0;
+
+        // Filtrar hijos primero
+        childCards.forEach(card => {
+            const show = filter === '' || matchesFilter(card, filter);
+            card.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+
+        // Administradores (se muestran si ellos o alguno de sus hijos coincide)
+        adminCards.forEach(card => {
+            const matchesSelf = filter === '' || matchesFilter(card, filter);
+            const hasVisibleChild = Array.from(card.querySelectorAll('.user-card-children .user-role-card')).some(c => c.style.display !== 'none');
+            const show = matchesSelf || hasVisibleChild;
+            card.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+
+        // Usuarios directos o vista admin
+        directCards.forEach(card => {
+            const show = filter === '' || matchesFilter(card, filter);
+            card.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+
+        const totalCards = adminCards.length + directCards.length + childCards.length;
+        infoContainer.innerHTML = `Mostrando <span class="search-match">${visibleCount}</span> de ${totalCards} registros.`;
+    };
+
+    searchInput.addEventListener('input', updateResults);
+    updateResults();
+}
+
 // ========================================
 // 4. CARGAR EMAILS PARA SISTEMA DE TARJETAS
 // ========================================
@@ -6016,7 +6445,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Configurar búsquedas existentes (solo las que existen)
     const searchConfigs = [
-        { input: 'searchInputUsers', table: 'usersTable', columns: [1, 2], info: 'usersSearchResultsInfo' },
         { input: 'searchInputEmails', table: 'emailsTable', columns: [0], info: 'emailsSearchResultsInfo' },
         { input: 'searchInputPlatforms', table: 'platformsTable', columns: [0], info: 'platformsSearchResultsInfo' }
     ];
@@ -6219,7 +6647,7 @@ if (typeof loadUserEmails === 'function') {
     };
 }
 
-console.log('✅ Correcciones para sistema de tarjetas aplicadas');
+console.log('✅ Roles y jerarquía de tarjetas listos');
 
 </script>
 
