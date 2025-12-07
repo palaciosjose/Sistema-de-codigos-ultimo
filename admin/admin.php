@@ -2413,10 +2413,24 @@ function testAllEnabledServers() {
                 font-weight: 700;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
+                border: 1px solid transparent;
             }
 
-            .badge-role-admin { background: rgba(0, 123, 255, 0.15); color: #66b2ff; border: 1px solid rgba(102, 178, 255, 0.4); }
-            .badge-role-user { background: rgba(108, 117, 125, 0.2); color: #ced4da; border: 1px solid rgba(206, 212, 218, 0.35); }
+            .badge-role-superadmin { background: rgba(128, 90, 213, 0.2); color: #d0b3ff; border-color: rgba(208, 179, 255, 0.5); }
+            .badge-role-admin { background: rgba(0, 123, 255, 0.15); color: #66b2ff; border-color: rgba(102, 178, 255, 0.4); }
+            .badge-role-user { background: rgba(108, 117, 125, 0.2); color: #ced4da; border-color: rgba(206, 212, 218, 0.35); }
+
+            .badge-creator {
+                padding: 0.2rem 0.65rem;
+                border-radius: 10px;
+                font-size: 0.8rem;
+                background: rgba(255, 255, 255, 0.06);
+                color: #d1d5db;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+            }
 
             .user-card-meta {
                 display: flex;
@@ -2441,6 +2455,8 @@ function testAllEnabledServers() {
 
             .user-card-status.status-ready { color: #4ade80; }
             .user-card-status.status-warning { color: #f9d86a; }
+            .user-card-status.status-danger { color: #f87171; }
+            .user-card-status.status-readonly { color: #cbd5e1; }
 
             .admin-preview-logo {
                 width: 56px;
@@ -2607,7 +2623,13 @@ function testAllEnabledServers() {
                                     <div class="user-card-body">
                                         <div class="user-card-title-row">
                                             <h5 class="mb-1">👤 <?= htmlspecialchars($admin_user['username']) ?></h5>
-                                            <span class="badge-role badge-role-admin">ADMIN</span>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="badge-role badge-role-admin">ADMIN</span>
+                                                <span class="badge-creator">
+                                                    <i class="fas fa-user-check"></i>
+                                                    <?= empty($admin_user['created_by_admin_id']) ? 'Admin Independiente' : 'Creado por: SuperAdmin' ?>
+                                                </span>
+                                            </div>
                                         </div>
                                         <div class="user-card-meta">
                                             <span><i class="fas fa-envelope me-1"></i><?= $admin_email_count ?> correos</span>
@@ -2634,7 +2656,21 @@ function testAllEnabledServers() {
                                             <?php
                                                 $child_email = $user_email_counts[$child_user['id']] ?? 0;
                                                 $child_subject = $user_subject_counts[$child_user['id']] ?? 0;
-                                                $is_configured = $child_email > 0 && $child_subject > 0;
+                                                $status_class = 'status-danger';
+                                                $status_label = '🔴 Sin acceso';
+
+                                                if ($child_email > 0 && $child_subject > 0) {
+                                                    $status_class = 'status-ready';
+                                                    $status_label = '✅ Configurado';
+                                                } elseif ($child_email > 0 || $child_subject > 0) {
+                                                    $status_class = 'status-warning';
+                                                    $status_label = '⚠️ Pendiente';
+                                                }
+
+                                                if ($current_user_role === 'superadmin' && !empty($child_user['created_by_admin_id'])) {
+                                                    $status_class = 'status-readonly';
+                                                    $status_label = '🔒 Solo lectura';
+                                                }
                                             ?>
                                             <div class="user-role-card role-user" data-username="<?= htmlspecialchars($child_user['username']) ?>" data-role="user" data-creator="<?= htmlspecialchars($admin_user['username']) ?>">
                                                 <div class="user-card-main">
@@ -2652,10 +2688,10 @@ function testAllEnabledServers() {
                                                             <span><i class="fas fa-tags me-1"></i><?= $child_subject ?> asuntos</span>
                                                         </div>
                                                         <div class="user-card-subtext">
-                                                            🏷️ Creado por: <?= htmlspecialchars($admin_user['username']) ?>
+                                                            <span class="badge-creator"><i class="fas fa-user-tag"></i> Creado por: <?= htmlspecialchars($admin_user['username']) ?></span>
                                                         </div>
-                                                        <div class="user-card-status <?= $is_configured ? 'status-ready' : 'status-warning' ?>">
-                                                            <?= $is_configured ? '✅ Configurado' : '🔒 Solo lectura' ?>
+                                                        <div class="user-card-status <?= $status_class ?>">
+                                                            <?= $status_label ?>
                                                         </div>
                                                     </div>
                                                     <div class="user-card-actions">
@@ -2679,7 +2715,16 @@ function testAllEnabledServers() {
                             <?php
                                 $direct_email = $user_email_counts[$direct_user['id']] ?? 0;
                                 $direct_subject = $user_subject_counts[$direct_user['id']] ?? 0;
-                                $direct_configured = $direct_email > 0 && $direct_subject > 0;
+                                $direct_status_class = 'status-danger';
+                                $direct_status_label = '🔴 Sin acceso';
+
+                                if ($direct_email > 0 && $direct_subject > 0) {
+                                    $direct_status_class = 'status-ready';
+                                    $direct_status_label = '✅ Configurado';
+                                } elseif ($direct_email > 0 || $direct_subject > 0) {
+                                    $direct_status_class = 'status-warning';
+                                    $direct_status_label = '⚠️ Pendiente';
+                                }
                             ?>
                             <div class="user-role-card role-user" data-username="<?= htmlspecialchars($direct_user['username']) ?>" data-role="user" data-creator="superadmin">
                                 <div class="user-card-main">
@@ -2696,9 +2741,9 @@ function testAllEnabledServers() {
                                             <span class="separator">|</span>
                                             <span><i class="fas fa-tags me-1"></i><?= $direct_subject ?> asuntos</span>
                                         </div>
-                                        <div class="user-card-subtext">🏷️ Creado por: SuperAdmin</div>
-                                        <div class="user-card-status <?= $direct_configured ? 'status-ready' : 'status-warning' ?>">
-                                            <?= $direct_configured ? '✅ Configurado' : '⚠️ Pendiente de permisos' ?>
+                                        <div class="user-card-subtext"><span class="badge-creator"><i class="fas fa-user-tag"></i> Creado por: SuperAdmin</span></div>
+                                        <div class="user-card-status <?= $direct_status_class ?>">
+                                            <?= $direct_status_label ?>
                                         </div>
                                     </div>
                                     <div class="user-card-actions">
@@ -2720,7 +2765,16 @@ function testAllEnabledServers() {
                             <?php
                                 $email_count = $user_email_counts[$user['id']] ?? 0;
                                 $subject_count = $user_subject_counts[$user['id']] ?? 0;
-                                $is_configured = $email_count > 0 && $subject_count > 0;
+                                $status_class = 'status-danger';
+                                $status_label = '🔴 Sin acceso';
+
+                                if ($email_count > 0 && $subject_count > 0) {
+                                    $status_class = 'status-ready';
+                                    $status_label = '✅ Configurado correctamente';
+                                } elseif ($email_count > 0 || $subject_count > 0) {
+                                    $status_class = 'status-warning';
+                                    $status_label = '⚠️ Pendiente';
+                                }
                             ?>
                             <div class="user-role-card role-user" data-username="<?= htmlspecialchars($user['username']) ?>" data-role="user" data-creator="<?= htmlspecialchars($user['creator_username'] ?? 'admin') ?>">
                                 <div class="user-card-main">
@@ -2737,8 +2791,8 @@ function testAllEnabledServers() {
                                             <span class="separator">|</span>
                                             <span><i class="fas fa-tags me-1"></i><?= $subject_count ?> asuntos</span>
                                         </div>
-                                        <div class="user-card-status <?= $is_configured ? 'status-ready' : 'status-warning' ?>">
-                                            <?= $is_configured ? '✅ Configurado correctamente' : '⚠️ Sin permisos asignados' ?>
+                                        <div class="user-card-status <?= $status_class ?>">
+                                            <?= $status_label ?>
                                         </div>
                                     </div>
                                     <div class="user-card-actions">
@@ -2746,7 +2800,7 @@ function testAllEnabledServers() {
                                             <i class="fas fa-edit"></i> Editar
                                         </button>
                                         <button class="btn-admin btn-success-admin btn-sm-admin" onclick="goToAssignments(<?= (int)$user['id'] ?>)">
-                                            <i class="fas fa-shield-alt"></i> <?= $is_configured ? 'Permisos' : 'Asignar Permisos' ?>
+                                            <i class="fas fa-shield-alt"></i> <?= $status_class === 'status-ready' ? 'Permisos' : 'Asignar Permisos' ?>
                                         </button>
                                     </div>
                                 </div>
