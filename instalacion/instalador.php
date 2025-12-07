@@ -337,18 +337,37 @@ function createCompleteDatabase($pdo) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci",
         
         "CREATE TABLE IF NOT EXISTS `settings` (
-            id INT AUTO_INCREMENT PRIMARY KEY, 
-            name VARCHAR(100) NOT NULL UNIQUE, 
-            value TEXT NOT NULL, 
-            description TEXT, 
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            value TEXT NOT NULL,
+            description TEXT,
             category VARCHAR(50) DEFAULT 'general',
             INDEX idx_category (category)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci",
-        
+
+        "CREATE TABLE IF NOT EXISTS `admin_configurations` (
+            admin_id INT NOT NULL,
+            site_title VARCHAR(150) DEFAULT NULL,
+            logo_url VARCHAR(255) DEFAULT NULL,
+            web_url VARCHAR(255) DEFAULT NULL,
+            telegram_url VARCHAR(255) DEFAULT NULL,
+            whatsapp_url VARCHAR(255) DEFAULT NULL,
+            welcome_message TEXT,
+            primary_color VARCHAR(20) DEFAULT NULL,
+            accent_color VARCHAR(20) DEFAULT NULL,
+            search_limit_daily INT DEFAULT NULL,
+            search_limit_hourly INT DEFAULT NULL,
+            allowed_imap_hosts TEXT,
+            email_templates JSON NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY admin_configurations_admin_id_unique (admin_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci",
+
         "CREATE TABLE IF NOT EXISTS `email_servers` (
-            id INT AUTO_INCREMENT PRIMARY KEY, 
-            server_name VARCHAR(50) NOT NULL, 
-            enabled TINYINT(1) NOT NULL DEFAULT 0, 
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            server_name VARCHAR(50) NOT NULL,
+            enabled TINYINT(1) NOT NULL DEFAULT 0,
             imap_server VARCHAR(100) NOT NULL, 
             imap_port INT NOT NULL DEFAULT 993, 
             imap_user VARCHAR(100) NOT NULL, 
@@ -667,14 +686,24 @@ function insertSystemUsers($pdo, $admin_user, $admin_password, $admin_telegram =
     // Convertir telegram_id a null si está vacío
     $telegram_id = (!empty($admin_telegram)) ? (int)$admin_telegram : null;
 
-    // Crear usuario admin con role
-    $stmt_user = $pdo->prepare("INSERT INTO users (username, password, telegram_id, status, role) VALUES (?, ?, ?, 1, 'admin')");
+    // Crear usuario admin con role superadmin
+    $stmt_user = $pdo->prepare("INSERT INTO users (username, password, telegram_id, status, role) VALUES (?, ?, ?, 1, 'superadmin')");
     $stmt_user->execute([$admin_user, $hashed_password, $telegram_id]);
     $admin_user_id = $pdo->lastInsertId();
-    
+
     // Crear entrada en tabla admin
     $stmt_admin = $pdo->prepare("INSERT INTO admin (id, username, password) VALUES (?, ?, ?)");
     $stmt_admin->execute([$admin_user_id, $admin_user, $hashed_password]);
+
+    // Registrar configuración base del administrador principal
+    $stmt_admin_config = $pdo->prepare(
+        "INSERT IGNORE INTO admin_configurations (admin_id, site_title, welcome_message) VALUES (?, ?, ?)"
+    );
+    $stmt_admin_config->execute([
+        $admin_user_id,
+        'Panel del Administrador',
+        'Bienvenido al panel de administración.'
+    ]);
     
     // Crear usuario cliente de ejemplo
     $cliente_password = password_hash('cliente123', PASSWORD_DEFAULT);
@@ -866,6 +895,7 @@ function setupFileSystem() {
         PROJECT_ROOT . '/images/logo/' => 0755,
         PROJECT_ROOT . '/images/fondo/' => 0755,
         PROJECT_ROOT . '/images/platforms/' => 0755,
+        PROJECT_ROOT . '/images/admin_logos/' => 0755,
         PROJECT_ROOT . '/telegram_bot/logs/' => 0777,
         PROJECT_ROOT . '/config/' => 0755,
         LICENSE_DIR => 0755
@@ -916,6 +946,55 @@ function setupFileSystem() {
             chmod($file, $permissions);
         }
     }
+
+    ensurePersonalizationFile();
+}
+
+function ensurePersonalizationFile() {
+    $target = PROJECT_ROOT . '/funciones_personalizacion.php';
+
+    if (file_exists($target)) {
+        return;
+    }
+
+    $content = <<<'PHP'
+<?php
+/**
+ * Funciones de personalización por Admin.
+ */
+function getAdminConfigForUser(mysqli $conn, int $userId): ?array {
+    $stmt = $conn->prepare("SELECT created_by_admin_id, role FROM users WHERE id = ?");
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    // Admins y superadmins usan configuración global
+    if (in_array($user['role'] ?? '', ['admin', 'superadmin'], true)) {
+        return null;
+    }
+
+    // Configuración del admin creador
+    $adminId = $user['created_by_admin_id'] ?? null;
+    if ($adminId) {
+        $stmt = $conn->prepare(
+            "SELECT site_title, logo_url, web_url, telegram_url, whatsapp_url, welcome_message
+             FROM admin_configurations
+             WHERE admin_id = ?"
+        );
+        $stmt->bind_param('i', $adminId);
+        $stmt->execute();
+        $config = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        return $config ?: null;
+    }
+
+    return null;
+}
+PHP;
+
+    file_put_contents($target, $content);
 }
 
 function createSecurityFiles() {
