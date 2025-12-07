@@ -5,6 +5,7 @@ session_start();
 // Incluimos los archivos necesarios
 require_once 'funciones.php';
 require_once 'decodificador.php';
+require_once 'funciones_personalizacion.php';
 
 // Verificar si el sistema está instalado. Si no, redirige al instalador.
 if (!is_installed()) {
@@ -28,7 +29,19 @@ check_session(false, 'index.php', true);
 
 // Obtener configuraciones del sistema (usa el sistema de caché)
 $settings = SimpleCache::get_settings($conn);
-$page_title = $settings['PAGE_TITLE'] ?? 'Sistema de Consulta';
+$admin_config = getAdminConfigForUser($conn, $_SESSION['user_id'] ?? 0);
+
+$page_title = $admin_config['site_title'] ?? ($settings['PAGE_TITLE'] ?? 'Sistema de Consulta');
+$logo_path = !empty($admin_config['logo_url'])
+    ? BASE_URL . 'images/admin_logos/' . $admin_config['logo_url']
+    : BASE_URL . 'images/logo/' . ($settings['LOGO'] ?? 'logo.png');
+
+$web_url = $admin_config['web_url'] ?? ($settings['enlace_global_1'] ?? '#');
+$telegram_url = $admin_config['telegram_url'] ?? ($settings['enlace_global_2'] ?? '#');
+$whatsapp_text = $settings['enlace_global_texto_whatsapp'] ?? '';
+$whatsapp_number = $settings['enlace_global_numero_whatsapp'] ?? '';
+$whatsapp_url = $admin_config['whatsapp_url'] ?? ('https://wa.me/' . $whatsapp_number . ($whatsapp_text !== '' ? '?text=' . urlencode($whatsapp_text) : ''));
+$welcome_message = trim($admin_config['welcome_message'] ?? '') !== '' ? $admin_config['welcome_message'] : 'Consulta tu Código Aquí';
 
 // Lógica de logout
 if (isset($_GET['logout'])) {
@@ -486,21 +499,16 @@ $has_results = !empty($resultado) || !empty($error_message);
           </li>
         <?php endif; ?>
         <li class="nav-item">
-          <a class="nav-link" href="<?= htmlspecialchars($settings['enlace_global_1'] ?? '#'); ?>" target="_blank"><i class="bi bi-globe"></i> <?= htmlspecialchars($settings['enlace_global_1_texto'] ?? 'Página Web'); ?></a>
+          <a class="nav-link" href="<?= htmlspecialchars($web_url); ?>" target="_blank"><i class="bi bi-globe"></i> <?= htmlspecialchars($settings['enlace_global_1_texto'] ?? 'Página Web'); ?></a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="<?= htmlspecialchars($settings['enlace_global_2'] ?? '#'); ?>" target="_blank"><i class="bi bi-telegram"></i> <?= htmlspecialchars($settings['enlace_global_2_texto'] ?? 'Telegram'); ?></a>
+            <a class="nav-link" href="<?= htmlspecialchars($telegram_url); ?>" target="_blank"><i class="bi bi-telegram"></i> <?= htmlspecialchars($settings['enlace_global_2_texto'] ?? 'Telegram'); ?></a>
         </li>
         <li class="nav-item">
           <a class="nav-link" href="manual.php"><i class="bi bi-info-circle"></i> Manual</a>
         </li>
         <li class="nav-item">
-            <?php
-              $whatsappNumero = $settings['enlace_global_numero_whatsapp'] ?? '';
-              $whatsappTexto = $settings['enlace_global_texto_whatsapp'] ?? '';
-              $whatsappLink = 'https://wa.me/' . $whatsappNumero . '?text=' . urlencode($whatsappTexto);
-            ?>
-            <a class="nav-link" href="<?= htmlspecialchars($whatsappLink) ?>" target="_blank"><i class="bi bi-whatsapp"></i> Contacto</a>
+            <a class="nav-link" href="<?= htmlspecialchars($whatsapp_url) ?>" target="_blank"><i class="bi bi-whatsapp"></i> Contacto</a>
         </li>
         <?php if ($user_logged_in): ?>
         <li class="nav-item">
@@ -516,9 +524,9 @@ $has_results = !empty($resultado) || !empty($error_message);
   <div class="main-card <?= $has_results ? 'expanded' : '' ?>">
     <div id="search-container" class="<?= $has_results ? 'hidden' : '' ?>">
         <div class="logo-container">
-          <img src="<?= BASE_URL ?>images/logo/<?= htmlspecialchars($settings['LOGO'] ?? 'logo.png'); ?>" alt="Logo" class="logo"/>
+          <img src="<?= htmlspecialchars($logo_path); ?>" alt="Logo" class="logo"/>
         </div>
-        <h1 class="main-title" id="typing-title"></h1>
+        <h1 class="main-title" id="typing-title"><?= htmlspecialchars($welcome_message); ?></h1>
         <form action="funciones.php" method="POST" class="search-form" id="searchForm">
           <div class="form-group-modern">
             <input type="email" id="email" name="email" class="form-input-modern" placeholder="Correo a consultar" required maxlength="50" list="authorizedEmails"/>
@@ -681,7 +689,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Lógica del título que se escribe solo ---
     const title = document.getElementById('typing-title');
     if (title) {
-        const titleText = 'Consulta tu Código Aquí';
+        const titleText = <?= json_encode($welcome_message); ?>;
         let i = 0;
         title.innerHTML = '';
         function typeWriter() {
@@ -706,7 +714,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const hiddenInput = document.getElementById('plataforma');
         const triggerSpan = trigger.querySelector('span');
         const mainLogo = document.querySelector('.logo');
-        const defaultLogo = '<?= BASE_URL ?>images/logo/<?= htmlspecialchars($settings['LOGO'] ?? 'logo.png'); ?>';
+        const defaultLogo = '<?= htmlspecialchars($logo_path, ENT_QUOTES, 'UTF-8'); ?>';
 
         trigger.addEventListener('click', (e) => {
             e.stopPropagation();
