@@ -2721,27 +2721,43 @@ function testAllEnabledServers() {
                                 $admin_subject_count = $user_subject_counts[$admin_id] ?? 0;
                                 $managed_count = $managed_user_counts[$admin_id] ?? 0;
                                 $admin_config = $admin_configurations[$admin_id] ?? null;
+                                $has_personalization = false;
+                                if ($admin_config) {
+                                    $has_personalization = (bool) array_filter([
+                                        $admin_config['site_title'] ?? null,
+                                        $admin_config['logo_url'] ?? null,
+                                        $admin_config['web_url'] ?? null,
+                                        $admin_config['telegram_url'] ?? null,
+                                        $admin_config['whatsapp_url'] ?? null,
+                                        $admin_config['welcome_message'] ?? null,
+                                    ], fn($value) => !empty(trim((string) $value)));
+                                }
                                 [$admin_status_class, $admin_status_label, $admin_status_key] = $computeStatus($admin_email_count, $admin_subject_count);
                             ?>
                             <div class="user-role-card role-admin" data-username="<?= htmlspecialchars($admin_user['username']) ?>" data-role="admin" data-status="<?= $admin_status_key ?>" data-creator="superadmin" data-emails="<?= htmlspecialchars($user_email_strings[$admin_id] ?? '') ?>" id="admin-card-<?= $admin_id ?>">
-                                <div class="user-card-main">
-                                    <div class="user-card-avatar">
-                                        <i class="fas fa-user-tie"></i>
-                                    </div>
-                                    <div class="user-card-body">
-                                        <div class="user-card-title-row">
-                                            <h5 class="mb-1">👤 <?= htmlspecialchars($admin_user['username']) ?></h5>
-                                            <div class="d-flex align-items-center gap-2">
-                                                <span class="badge-role badge-role-admin">ADMIN</span>
-                                                <span class="badge-creator">
-                                                    <i class="fas fa-user-check"></i>
-                                                    <?= empty($admin_user['created_by_admin_id']) ? 'Admin Independiente' : 'Creado por: SuperAdmin' ?>
-                                                </span>
+                                        <div class="user-card-main">
+                                            <div class="user-card-avatar">
+                                                <i class="fas fa-user-tie"></i>
                                             </div>
-                                        </div>
-                                        <div class="user-card-meta">
-                                            <span><i class="fas fa-envelope me-1"></i><?= $admin_email_count ?> correos</span>
-                                            <span class="separator">|</span>
+                                            <div class="user-card-body">
+                                                <div class="user-card-title-row">
+                                                    <h5 class="mb-1">👤 <?= htmlspecialchars($admin_user['username']) ?></h5>
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <span class="badge-role badge-role-admin">ADMIN</span>
+                                                        <span class="badge-creator">
+                                                            <i class="fas fa-user-check"></i>
+                                                            <?= empty($admin_user['created_by_admin_id']) ? 'Admin Independiente' : 'Creado por: SuperAdmin' ?>
+                                                        </span>
+                                                        <?php if ($has_personalization): ?>
+                                                            <span class="badge bg-info text-dark d-inline-flex align-items-center gap-1">
+                                                                <i class="fas fa-palette"></i> Personalizado
+                                                            </span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                                <div class="user-card-meta">
+                                                    <span><i class="fas fa-envelope me-1"></i><?= $admin_email_count ?> correos</span>
+                                                    <span class="separator">|</span>
                                             <span><i class="fas fa-tags me-1"></i><?= $admin_subject_count ?> asuntos</span>
                                         </div>
                                         <div class="user-card-subtext">
