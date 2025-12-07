@@ -321,17 +321,19 @@ function createCompleteDatabase($pdo) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci",
         
         "CREATE TABLE IF NOT EXISTS `users` (
-            id INT AUTO_INCREMENT PRIMARY KEY, 
-            username VARCHAR(50) NOT NULL UNIQUE, 
-            password VARCHAR(255) NOT NULL, 
-            telegram_id BIGINT NULL UNIQUE, 
-            telegram_username VARCHAR(255) NULL, 
-            last_telegram_activity TIMESTAMP NULL, 
-            status TINYINT(1) DEFAULT 1, 
-            role ENUM('user', 'admin', 'superadmin') DEFAULT 'user', 
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            telegram_id BIGINT NULL UNIQUE,
+            telegram_username VARCHAR(255) NULL,
+            last_telegram_activity TIMESTAMP NULL,
+            status TINYINT(1) DEFAULT 1,
+            role ENUM('user', 'admin', 'superadmin') DEFAULT 'user',
+            created_by_admin_id INT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_telegram_id (telegram_id),
-            INDEX idx_status_role (status, role)
+            INDEX idx_status_role (status, role),
+            INDEX idx_created_by_admin (created_by_admin_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_spanish_ci",
         
         "CREATE TABLE IF NOT EXISTS `settings` (
