@@ -24,7 +24,31 @@ function ensure_created_by_admin_column(mysqli $conn): void {
     }
 }
 
+function ensure_admin_configurations_table(mysqli $conn): void {
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS admin_configurations (
+            admin_id INT NOT NULL,
+            site_title VARCHAR(150) DEFAULT NULL,
+            logo_url VARCHAR(255) DEFAULT NULL,
+            web_url VARCHAR(255) DEFAULT NULL,
+            telegram_url VARCHAR(255) DEFAULT NULL,
+            whatsapp_url VARCHAR(255) DEFAULT NULL,
+            welcome_message TEXT,
+            primary_color VARCHAR(20) DEFAULT NULL,
+            accent_color VARCHAR(20) DEFAULT NULL,
+            search_limit_daily INT DEFAULT NULL,
+            search_limit_hourly INT DEFAULT NULL,
+            allowed_imap_hosts TEXT,
+            email_templates JSON NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY admin_configurations_admin_id_unique (admin_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+}
+
 ensure_created_by_admin_column($conn);
+ensure_admin_configurations_table($conn);
 
 $current_user_role = $_SESSION['user_role'] ?? 'user';
 $current_user_id = $_SESSION['user_id'] ?? null;
@@ -90,7 +114,22 @@ function createUser($conn) {
     $stmt->bind_param("sssisi", $username, $hashed_password, $telegram_param, $status, $role, $created_by_admin_id);
     
     if ($stmt->execute()) {
-        $_SESSION['message'] = 'Usuario creado con éxito.';
+        $new_user_id = $stmt->insert_id;
+        if ($role === 'admin') {
+            $default_title = "Panel de $username";
+            $default_welcome = "Bienvenido al panel personalizado de $username";
+            $config_stmt = $conn->prepare(
+                "INSERT IGNORE INTO admin_configurations (admin_id, site_title, welcome_message) VALUES (?, ?, ?)"
+            );
+            if ($config_stmt) {
+                $config_stmt->bind_param('iss', $new_user_id, $default_title, $default_welcome);
+                $config_stmt->execute();
+                $config_stmt->close();
+            }
+            $_SESSION['message'] = 'Usuario creado con éxito. Ahora asigna recursos a este Admin.';
+        } else {
+            $_SESSION['message'] = 'Usuario creado con éxito.';
+        }
     } else {
         $_SESSION['message'] = 'Error al crear el usuario: ' . $stmt->error;
     }
