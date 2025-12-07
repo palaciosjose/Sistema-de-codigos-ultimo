@@ -6647,7 +6647,7 @@ if (typeof loadUserEmails === 'function') {
     };
 }
 
-console.log('✅ Correcciones para sistema de tarjetas aplicadas');
+console.log('✅ Roles y jerarquía de tarjetas listos');
 
 </script>
 
