@@ -82,7 +82,6 @@ HTML;
 
 // Incluir dependencias
 require_once 'decodificador.php';
-require_once 'instalacion/basededatos.php';
 require_once 'cache/cache_helper.php';
 
 /**

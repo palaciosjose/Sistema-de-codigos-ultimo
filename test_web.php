@@ -41,32 +41,23 @@ if (file_exists("telegram_bot/webhook.php")) {
 }
 
 echo "<h2>3️⃣ Test de base de datos</h2>";
-if (file_exists("instalacion/basededatos.php")) {
-    include "instalacion/basededatos.php";
-    
-    if (isset($db_host, $db_user, $db_password, $db_name)) {
-        echo "<p>✅ Variables de configuración encontradas</p>";
-        
-        try {
-            $testDb = new mysqli($db_host, $db_user, $db_password, $db_name);
-            if ($testDb->connect_error) {
-                echo "<p>❌ Error de conexión: " . $testDb->connect_error . "</p>";
-                $errors[] = "Error de conexión a BD";
-            } else {
-                echo "<p>✅ Conexión exitosa</p>";
-                $testDb->close();
-            }
-        } catch (Exception $e) {
-            echo "<p>❌ Error: " . $e->getMessage() . "</p>";
-            $errors[] = "Error de BD: " . $e->getMessage();
-        }
-    } else {
-        echo "<p>❌ Variables de configuración no encontradas</p>";
-        $errors[] = "Variables de BD no definidas";
+require_once __DIR__ . '/config/config.php';
+
+try {
+    $dbConfig = load_db_config();
+    echo "<p>✅ Variables de configuración encontradas</p>";
+
+    try {
+        $testDb = get_db_connection();
+        echo "<p>✅ Conexión exitosa</p>";
+        $testDb->close();
+    } catch (RuntimeException $e) {
+        echo "<p>❌ Error de conexión: " . $e->getMessage() . "</p>";
+        $errors[] = "Error de conexión a BD";
     }
-} else {
+} catch (RuntimeException $e) {
     echo "<p>❌ Archivo de configuración de BD no encontrado</p>";
-    $errors[] = "basededatos.php no encontrado";
+    $errors[] = $e->getMessage();
 }
 
 echo "<h2>📊 RESUMEN</h2>";

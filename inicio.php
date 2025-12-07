@@ -13,11 +13,11 @@ if (!is_installed()) {
 }
 
 // Conexión a la base de datos
-require_once 'instalacion/basededatos.php';
-$conn = new mysqli($db_host, $db_user, $db_password, $db_name);
-$conn->set_charset("utf8mb4");
+require_once __DIR__ . '/config/config.php';
 
-if ($conn->connect_error) {
+try {
+    $conn = get_db_connection();
+} catch (RuntimeException $e) {
     // Manejar error de conexión de forma elegante
     die("Error de conexión. Contacte al administrador.");
 }

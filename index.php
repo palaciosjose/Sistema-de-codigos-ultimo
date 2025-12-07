@@ -11,10 +11,8 @@ if (!is_installed()) {
     exit();
 }
 
-// Incluir archivos de configuración
-if (file_exists('instalacion/basededatos.php')) {
-    require_once 'instalacion/basededatos.php';
-}
+// Cargar configuración centralizada de base de datos
+require_once __DIR__ . '/config/config.php';
 
 // Evitar que usuarios ya logueados vean esta página
 if (isset($_SESSION['user_id'])) {
@@ -22,11 +20,10 @@ if (isset($_SESSION['user_id'])) {
     exit();
 }
 
-$conn = new mysqli($db_host, $db_user, $db_password, $db_name);
-$conn->set_charset("utf8mb4");
-
-if ($conn->connect_error) {
-    die("Error de conexión a la base de datos: " . $conn->connect_error);
+try {
+    $conn = get_db_connection();
+} catch (RuntimeException $e) {
+    die($e->getMessage());
 }
 
 // Lógica de login

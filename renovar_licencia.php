@@ -4,9 +4,12 @@
 define('INSTALLER_MODE', true);
 session_start();
 require_once __DIR__ . '/license_client.php';
+require_once __DIR__ . '/config/config.php';
 
 // Redirigir al instalador si el sistema no está configurado
-if (!file_exists('config/db_credentials.php')) {
+try {
+    load_db_config();
+} catch (RuntimeException $e) {
     header('Location: instalacion/instalador.php');
     exit();
 }

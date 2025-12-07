@@ -6,50 +6,14 @@ error_reporting(E_ALL);
 echo "<h1>🗃️ Creador de Tablas para Bot de Telegram</h1>";
 
 // Cargar configuración de base de datos
+require_once __DIR__ . '/config/config.php';
+
 function getDatabaseConfig() {
-    // Intentar archivo .env del bot
-    $envFile = __DIR__ . '/telegram_bot/.env';
-    if (file_exists($envFile)) {
-        $config = [];
-        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            if (strpos($line, '=') !== false && strpos($line, '#') !== 0) {
-                list($key, $value) = explode('=', $line, 2);
-                $config[trim($key)] = trim($value);
-            }
-        }
-        if (isset($config['DB_HOST'])) {
-            return [
-                'host' => $config['DB_HOST'],
-                'user' => $config['DB_USER'],
-                'password' => $config['DB_PASSWORD'],
-                'database' => $config['DB_NAME']
-            ];
-        }
+    try {
+        return load_db_config();
+    } catch (RuntimeException $e) {
+        return null;
     }
-    
-    // Fallback a archivos legacy
-    if (file_exists('config/db_credentials.php')) {
-        include 'config/db_credentials.php';
-        return [
-            'host' => $db_host ?? 'localhost',
-            'user' => $db_user ?? '',
-            'password' => $db_password ?? '',
-            'database' => $db_name ?? ''
-        ];
-    }
-    
-    if (file_exists('instalacion/basededatos.php')) {
-        include 'instalacion/basededatos.php';
-        return [
-            'host' => $db_host ?? 'localhost',
-            'user' => $db_user ?? '',
-            'password' => $db_password ?? '',
-            'database' => $db_name ?? ''
-        ];
-    }
-    
-    return null;
 }
 
 if (isset($_POST['create_tables'])) {
