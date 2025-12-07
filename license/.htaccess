@@ -1,0 +1,4 @@
+Deny from all
+<Files "*.dat">
+Deny from all
+</Files>

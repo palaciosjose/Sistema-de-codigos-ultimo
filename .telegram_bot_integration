@@ -1,0 +1,11 @@
+{
+    "integrated": true,
+    "integration_date": "2025-07-12 17:49:18",
+    "version": "1.0.0",
+    "features": {
+        "web_setup": true,
+        "web_tests": true,
+        "auto_configuration": true,
+        "documentation": true
+    }
+}

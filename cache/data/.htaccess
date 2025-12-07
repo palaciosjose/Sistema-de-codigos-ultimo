@@ -1,0 +1,5 @@
+# Proteger carpeta de cache
+Deny from all
+<Files "*.json">
+Deny from all
+</Files>

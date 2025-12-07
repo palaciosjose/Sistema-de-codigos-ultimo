@@ -1,0 +1,234 @@
+<?php
+/**
+ * Autoloader completo y funcional para el proyecto TelegramBot
+ * Reemplaza vendor/autoload.php
+ * 
+ * Guarda este archivo como: vendor/autoload.php
+ */
+
+// Evitar carga múltiple
+if (defined('TELEGRAM_BOT_AUTOLOADER_LOADED')) {
+    return;
+}
+define('TELEGRAM_BOT_AUTOLOADER_LOADED', true);
+
+// Obtener el directorio raíz del proyecto
+$projectRoot = dirname(__DIR__);
+
+// ====================================================================
+// AUTOLOADER PRINCIPAL PARA TELEGRAMBOT
+// ====================================================================
+spl_autoload_register(function ($className) use ($projectRoot) {
+    // Solo procesar clases del namespace TelegramBot
+    if (strpos($className, 'TelegramBot\\') !== 0) {
+        return false;
+    }
+    
+    // Remover el namespace principal
+    $relativePath = substr($className, strlen('TelegramBot\\'));
+    
+    // Convertir namespace a ruta de archivo
+    $filePath = $projectRoot . '/telegram_bot/' . str_replace('\\', '/', $relativePath) . '.php';
+    
+    // Debug: log intentos de carga
+    if (function_exists('error_log')) {
+        error_log("TelegramBot Autoloader: Intentando cargar $className desde $filePath");
+    }
+    
+    // Cargar el archivo si existe
+    if (file_exists($filePath)) {
+        require_once $filePath;
+        
+        // Verificar que la clase se cargó correctamente
+        if (class_exists($className)) {
+            if (function_exists('error_log')) {
+                error_log("TelegramBot Autoloader: ✅ $className cargado exitosamente");
+            }
+            return true;
+        } else {
+            if (function_exists('error_log')) {
+                error_log("TelegramBot Autoloader: ❌ $className no se pudo cargar desde $filePath");
+            }
+        }
+    } else {
+        if (function_exists('error_log')) {
+            error_log("TelegramBot Autoloader: ❌ Archivo no encontrado: $filePath");
+        }
+    }
+    
+    return false;
+});
+
+// ====================================================================
+// AUTOLOADER PARA SHARED
+// ====================================================================
+spl_autoload_register(function ($className) use ($projectRoot) {
+    // Solo procesar clases del namespace Shared
+    if (strpos($className, 'Shared\\') !== 0) {
+        return false;
+    }
+    
+    // Remover el namespace principal
+    $relativePath = substr($className, strlen('Shared\\'));
+    
+    // Convertir namespace a ruta de archivo
+    $filePath = $projectRoot . '/shared/' . str_replace('\\', '/', $relativePath) . '.php';
+    
+    // Cargar el archivo si existe
+    if (file_exists($filePath)) {
+        require_once $filePath;
+        return class_exists($className);
+    }
+    
+    return false;
+});
+
+// ====================================================================
+// AUTOLOADER PARA LONGMAN TELEGRAM BOT
+// ====================================================================
+spl_autoload_register(function ($className) use ($projectRoot) {
+    // Solo procesar clases del namespace Longman\TelegramBot
+    if (strpos($className, 'Longman\\TelegramBot\\') !== 0) {
+        return false;
+    }
+    
+    // Buscar en diferentes ubicaciones posibles
+    $possiblePaths = [
+        $projectRoot . '/vendor/longman/telegram-bot/src/',
+        $projectRoot . '/vendor/longman/telegram-bot/src/Longman/TelegramBot/',
+        $projectRoot . '/longman/telegram-bot/src/',
+    ];
+    
+    $relativePath = substr($className, strlen('Longman\\TelegramBot\\'));
+    $filePath = str_replace('\\', '/', $relativePath) . '.php';
+    
+    foreach ($possiblePaths as $basePath) {
+        $fullPath = $basePath . $filePath;
+        if (file_exists($fullPath)) {
+            require_once $fullPath;
+            return class_exists($className);
+        }
+    }
+    
+    return false;
+});
+
+// ====================================================================
+// AUTOLOADER PARA OTRAS DEPENDENCIAS COMUNES
+// ====================================================================
+spl_autoload_register(function ($className) use ($projectRoot) {
+    // Mapeo de clases específicas que pueden necesitarse
+    $classMap = [
+        // PSR clases
+        'Psr\\Http\\Message\\RequestInterface' => 'vendor/psr/http-message/src/RequestInterface.php',
+        'Psr\\Http\\Message\\ResponseInterface' => 'vendor/psr/http-message/src/ResponseInterface.php',
+        'Psr\\Http\\Message\\UriInterface' => 'vendor/psr/http-message/src/UriInterface.php',
+        'Psr\\Http\\Client\\ClientInterface' => 'vendor/psr/http-client/src/ClientInterface.php',
+        
+        // Guzzle clases básicas
+        'GuzzleHttp\\Client' => 'vendor/guzzlehttp/guzzle/src/Client.php',
+        'GuzzleHttp\\Psr7\\Request' => 'vendor/guzzlehttp/psr7/src/Request.php',
+        'GuzzleHttp\\Psr7\\Response' => 'vendor/guzzlehttp/psr7/src/Response.php',
+    ];
+    
+    if (isset($classMap[$className])) {
+        $filePath = $projectRoot . '/' . $classMap[$className];
+        if (file_exists($filePath)) {
+            require_once $filePath;
+            return class_exists($className);
+        }
+    }
+    
+    return false;
+});
+
+// ====================================================================
+// AUTOLOADER GENÉRICO PARA VENDOR
+// ====================================================================
+spl_autoload_register(function ($className) use ($projectRoot) {
+    // Intentar cargar desde vendor usando PSR-4
+    $namespaceParts = explode('\\', $className);
+    
+    if (count($namespaceParts) >= 2) {
+        $vendor = $namespaceParts[0];
+        $package = $namespaceParts[1];
+        
+        // Rutas posibles para vendor
+        $possiblePaths = [
+            $projectRoot . '/vendor/' . strtolower($vendor) . '/' . strtolower($package) . '/src/',
+            $projectRoot . '/vendor/' . strtolower($vendor) . '/' . strtolower($package) . '/',
+            $projectRoot . '/vendor/' . strtolower($vendor) . '-' . strtolower($package) . '/src/',
+            $projectRoot . '/vendor/' . strtolower($vendor) . '-' . strtolower($package) . '/',
+        ];
+        
+        $relativePath = implode('/', array_slice($namespaceParts, 2)) . '.php';
+        
+        foreach ($possiblePaths as $basePath) {
+            $fullPath = $basePath . $relativePath;
+            if (file_exists($fullPath)) {
+                require_once $fullPath;
+                return class_exists($className);
+            }
+        }
+    }
+    
+    return false;
+});
+
+// ====================================================================
+// CARGAR DEPENDENCIAS CRÍTICAS
+// ====================================================================
+
+// Intentar cargar autoloader de Composer real si existe
+$composerAutoloaders = [
+    $projectRoot . '/vendor/autoload_real.php',
+    $projectRoot . '/vendor/composer/autoload_real.php',
+];
+
+foreach ($composerAutoloaders as $autoloader) {
+    if (file_exists($autoloader)) {
+        require_once $autoloader;
+        break;
+    }
+}
+
+// ====================================================================
+// VERIFICACIÓN Y DEBUG
+// ====================================================================
+
+// Función para verificar que el autoloader funciona
+function testTelegramBotAutoloader() {
+    $testClasses = [
+        'TelegramBot\\Services\\TelegramAuth',
+        'TelegramBot\\Services\\TelegramQuery',
+        'TelegramBot\\Handlers\\CommandHandler',
+        'TelegramBot\\Handlers\\CallbackHandler',
+        'TelegramBot\\Utils\\TelegramAPI'
+    ];
+    
+    $results = [];
+    foreach ($testClasses as $class) {
+        $results[$class] = class_exists($class);
+    }
+    
+    return $results;
+}
+
+// Solo ejecutar test si se solicita explícitamente
+if (defined('TELEGRAM_BOT_AUTOLOADER_TEST') && TELEGRAM_BOT_AUTOLOADER_TEST) {
+    $testResults = testTelegramBotAutoloader();
+    foreach ($testResults as $class => $loaded) {
+        $status = $loaded ? '✅' : '❌';
+        echo "$status $class\n";
+    }
+}
+
+// Log de éxito
+if (function_exists('error_log')) {
+    error_log("TelegramBot Autoloader: Autoloader completo cargado exitosamente");
+}
+
+// Retornar función de test para uso externo
+return function() {
+    return testTelegramBotAutoloader();
+};
