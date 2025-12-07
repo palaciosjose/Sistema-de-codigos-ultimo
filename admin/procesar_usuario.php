@@ -113,6 +113,7 @@ function createUser($conn) {
     $telegram_param = $telegram_id !== '' ? $telegram_id : null;
     $stmt->bind_param("sssisi", $username, $hashed_password, $telegram_param, $status, $role, $created_by_admin_id);
     
+    $redirect_target = '/admin/admin.php';
     if ($stmt->execute()) {
         $new_user_id = $stmt->insert_id;
         if ($role === 'admin') {
@@ -127,15 +128,18 @@ function createUser($conn) {
                 $config_stmt->close();
             }
             $_SESSION['message'] = 'Usuario creado con éxito. Ahora asigna recursos a este Admin.';
+            if ($current_user_role === 'superadmin') {
+                $redirect_target = '/admin/admin.php?tab=asignaciones&focus_admin=' . $new_user_id;
+            }
         } else {
             $_SESSION['message'] = 'Usuario creado con éxito.';
         }
     } else {
         $_SESSION['message'] = 'Error al crear el usuario: ' . $stmt->error;
     }
-    
+
     $stmt->close();
-    header('Location: /admin/admin.php');
+    header('Location: ' . $redirect_target);
     exit();
 }
 

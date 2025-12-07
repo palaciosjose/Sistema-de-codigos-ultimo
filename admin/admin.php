@@ -4028,62 +4028,138 @@ document.head.appendChild(style);
                 </div>
                 
                 <div class="modal-body">
-                    <div class="form-group-admin">
-                        <label for="username" class="form-label-admin">
-                            <i class="fas fa-user me-2"></i>
-                            Usuario *
-                        </label>
-                        <input type="text" class="form-control-admin" id="username" name="username" required 
-                               placeholder="Nombre de usuario" pattern="[a-zA-Z0-9_.-]+" 
-                               title="Solo letras, números, guiones y puntos">
-                        <small class="text-muted">Solo letras, números, guiones y puntos</small>
-                    </div>
-                    
-                    <!-- ⭐ CAMPO TELEGRAM ID EN LUGAR DE EMAIL -->
-                    <div class="form-group-admin">
-                        <label for="telegram_id" class="form-label-admin">
-                            <i class="fab fa-telegram me-2"></i>
-                            ID de Telegram
-                        </label>
-                        <input type="text" class="form-control-admin" id="telegram_id" name="telegram_id" 
-                               placeholder="123456789" pattern="[0-9]+" 
-                               title="Solo números - ID numérico de Telegram">
-                        <small class="text-muted">
-                            <i class="fas fa-info-circle me-1"></i>
-                            ID numérico de Telegram (opcional). Para obtenerlo, envía <code>/myid</code> a @userinfobot en Telegram
-                        </small>
-                    </div>
-                    
-                    <div class="form-group-admin">
-                        <label for="password" class="form-label-admin">
-                            <i class="fas fa-lock me-2"></i>
-                            Contraseña *
-                        </label>
-                        <input type="password" class="form-control-admin" id="password" name="password" required 
-                               placeholder="Contraseña del usuario" minlength="6">
-                        <small class="text-muted">Mínimo 6 caracteres</small>
-                    </div>
-                    
-                    <div class="form-check-admin">
-                        <input type="checkbox" class="form-check-input-admin" id="status" name="status" value="1" checked>
-                        <label for="status" class="form-check-label-admin">
-                            <i class="fas fa-check-circle me-2"></i>
-                            Usuario Activo
-                        </label>
-                    </div>
-
                     <?php if ($current_user_role === 'superadmin'): ?>
-                        <div class="form-group-admin mt-3">
-                            <label for="role" class="form-label-admin">
-                                <i class="fas fa-user-shield me-2"></i>
-                                Rol del Usuario
-                            </label>
-                            <select class="form-control-admin" id="role" name="role">
-                                <option value="user">Usuario</option>
-                                <option value="admin">Admin</option>
-                            </select>
+                        <div class="p-3 rounded-3 mb-3" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color);">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-id-badge me-2 text-info"></i>
+                                <h6 class="mb-0">Datos Básicos</h6>
+                            </div>
+                            <div class="form-group-admin mb-3">
+                                <label for="username" class="form-label-admin">
+                                    <i class="fas fa-user me-2"></i>
+                                    Usuario *
+                                </label>
+                                <input type="text" class="form-control-admin" id="username" name="username" required
+                                       placeholder="Nombre de usuario" pattern="[a-zA-Z0-9_.-]+"
+                                       title="Solo letras, números, guiones y puntos">
+                                <small class="text-muted">Solo letras, números, guiones y puntos</small>
+                            </div>
+
+                            <div class="form-group-admin mb-3">
+                                <label for="telegram_id" class="form-label-admin">
+                                    <i class="fab fa-telegram me-2"></i>
+                                    ID de Telegram
+                                </label>
+                                <input type="text" class="form-control-admin" id="telegram_id" name="telegram_id"
+                                       placeholder="123456789" pattern="[0-9]+"
+                                       title="Solo números - ID numérico de Telegram">
+                                <small class="text-muted">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    ID numérico de Telegram (opcional). Para obtenerlo, envía <code>/myid</code> a @userinfobot en Telegram
+                                </small>
+                            </div>
+
+                            <div class="form-group-admin mb-3">
+                                <label for="password" class="form-label-admin">
+                                    <i class="fas fa-lock me-2"></i>
+                                    Contraseña *
+                                </label>
+                                <input type="password" class="form-control-admin" id="password" name="password" required
+                                       placeholder="Contraseña del usuario" minlength="6">
+                                <small class="text-muted">Mínimo 6 caracteres</small>
+                            </div>
+
+                            <div class="form-check-admin">
+                                <input type="checkbox" class="form-check-input-admin" id="status" name="status" value="1" checked>
+                                <label for="status" class="form-check-label-admin">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Usuario Activo
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="p-3 rounded-3" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color);">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-user-shield me-2 text-warning"></i>
+                                <h6 class="mb-0">Selección de Rol</h6>
+                            </div>
+                            <div class="form-check-admin mb-2">
+                                <input class="form-check-input-admin" type="radio" name="role" id="role_user" value="user" checked>
+                                <label class="form-check-label-admin" for="role_user">
+                                    <strong>Usuario Normal</strong><br>
+                                    <small class="text-muted">Solo puede buscar códigos</small>
+                                </label>
+                            </div>
+                            <div class="form-check-admin mb-2">
+                                <input class="form-check-input-admin" type="radio" name="role" id="role_admin" value="admin">
+                                <label class="form-check-label-admin" for="role_admin">
+                                    <strong>Administrador</strong><br>
+                                    <small class="text-muted">Puede crear y gestionar usuarios normales</small>
+                                </label>
+                            </div>
+                            <div class="alert alert-info mt-3 mb-0" style="background: rgba(0,123,255,0.1); border: 1px solid rgba(0,123,255,0.3);">
+                                <i class="fas fa-hands-helping me-2"></i>
+                                Si eliges <strong>Administrador</strong>, se creará su panel personalizado y te llevaremos a la asignación de recursos.
+                            </div>
                         </div>
                     <?php else: ?>
+                        <div class="p-3 rounded-3" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color);">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-id-badge me-2 text-info"></i>
+                                <h6 class="mb-0">Crear Nuevo Usuario</h6>
+                            </div>
+                            <div class="form-group-admin mb-3">
+                                <label for="username" class="form-label-admin">
+                                    <i class="fas fa-user me-2"></i>
+                                    Usuario *
+                                </label>
+                                <input type="text" class="form-control-admin" id="username" name="username" required
+                                       placeholder="Nombre de usuario" pattern="[a-zA-Z0-9_.-]+"
+                                       title="Solo letras, números, guiones y puntos">
+                                <small class="text-muted">Solo letras, números, guiones y puntos</small>
+                            </div>
+
+                            <div class="form-group-admin mb-3">
+                                <label for="telegram_id" class="form-label-admin">
+                                    <i class="fab fa-telegram me-2"></i>
+                                    ID de Telegram
+                                </label>
+                                <input type="text" class="form-control-admin" id="telegram_id" name="telegram_id"
+                                       placeholder="123456789" pattern="[0-9]+"
+                                       title="Solo números - ID numérico de Telegram">
+                                <small class="text-muted">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    ID numérico de Telegram (opcional). Para obtenerlo, envía <code>/myid</code> a @userinfobot en Telegram
+                                </small>
+                            </div>
+
+                            <div class="form-group-admin mb-3">
+                                <label for="password" class="form-label-admin">
+                                    <i class="fas fa-lock me-2"></i>
+                                    Contraseña *
+                                </label>
+                                <input type="password" class="form-control-admin" id="password" name="password" required
+                                       placeholder="Contraseña del usuario" minlength="6">
+                                <small class="text-muted">Mínimo 6 caracteres</small>
+                            </div>
+
+                            <div class="form-check-admin mb-3">
+                                <input type="checkbox" class="form-check-input-admin" id="status" name="status" value="1" checked>
+                                <label for="status" class="form-check-label-admin">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Usuario Activo
+                                </label>
+                            </div>
+
+                            <div class="alert alert-secondary mb-2" style="background: rgba(255,255,255,0.03); border: 1px dashed var(--border-color);">
+                                <i class="fas fa-tag me-2"></i>
+                                Este usuario será asignado a: <strong>TU CUENTA (Admin)</strong>
+                            </div>
+                            <div class="alert alert-warning" style="background: rgba(255,193,7,0.1); border: 1px solid rgba(255,193,7,0.3);">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                Solo podrás asignarle los correos y asuntos que tú tienes disponibles.
+                            </div>
+                        </div>
                         <input type="hidden" name="role" value="user">
                     <?php endif; ?>
                 </div>
