@@ -28,7 +28,7 @@ dependencies.
 The system verifies its license with the remote server every 24 hours. If the
 server responds with an HTTP 4xx code, the license is marked as invalid
 immediately and an overlay covers the interface to block access. Network errors
-keep the previous validation date so the 76¥2day grace period starts from the last
+keep the previous validation date so the 7-day grace period starts from the last
 successful check; once that period ends the overlay also activates and the system
 remains blocked until the license is renewed.
 
@@ -40,13 +40,12 @@ Administrators can trigger a manual check by visiting
 
 After updating the license client, run a manual synchronization once so the
 server can provide the new `license_type` and `expires_at` fields. You can do
+this from the admin panel (**Licencia** tab 鈫� **Actualizar Datos de Licencia**)
+or by visiting `admin/sync_license.php` directly.
 
 ## Development
 
 Before pushing changes, run `composer lint` to ensure all PHP files are free of syntax errors.
-
-this from the admin panel (**Licencia** tab ¡ú **Actualizar Datos de Licencia**)
-or by visiting `admin/sync_license.php` directly.
 
 ## User Manual
 
@@ -57,14 +56,16 @@ instructions. The same content is also available in
 
 ## Telegram Bot (Experimental)
 
-A new Telegram bot is being integrated to replicate the web search features. The initial skeleton lives under `telegram_bot/` and requires Composer dependencies. To install them run:
+A new Telegram bot is being integrated to replicate the web search features. The
+initial skeleton lives under `telegram_bot/` and requires Composer dependencies.
+To install them run:
 
 ```bash
 composer install
 ```
 
 Configure your bot token in `telegram_bot/config/bot_config.php` and set up the webhook to point to `telegram_bot/webhook.php`.
-From version 5.0.1 these valores pueden modificarse desde la pesta0Š9a **Bot Telegram** del panel de administraci¨®n.
+From version 5.0.1 these values can be modified from the **Bot Telegram** tab in the admin panel.
 
-
-Once configured, you can query codes via /codigo <id> or search with /buscar <palabras>. The bot uses the same database as the website, so results are consistent across both platforms.
+Once configured, you can query codes via `/codigo <id>` or search with `/buscar <palabras>`. The bot uses the same database as the
+website, so results are consistent across both platforms.
