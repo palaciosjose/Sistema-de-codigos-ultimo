@@ -54,6 +54,21 @@ if ($conn->connect_error) {
     exit();
 }
 
+function ensure_created_by_admin_column(mysqli $conn): void {
+    $column_check = $conn->query("SHOW COLUMNS FROM users LIKE 'created_by_admin_id'");
+    if ($column_check && $column_check->num_rows === 0) {
+        $conn->query("ALTER TABLE users ADD COLUMN created_by_admin_id INT NULL AFTER role, ADD INDEX idx_created_by_admin (created_by_admin_id)");
+    }
+    if ($column_check instanceof mysqli_result) {
+        $column_check->close();
+    }
+}
+
+ensure_created_by_admin_column($conn);
+
+$current_user_id = $_SESSION['user_id'] ?? null;
+$current_user_role = $_SESSION['user_role'] ?? 'user';
+
 $required_tables = ['admin', 'settings', 'email_servers', 'users', 'logs'];
 foreach ($required_tables as $table) {
     $result = $conn->query("SHOW TABLES LIKE '$table'");
@@ -123,6 +138,30 @@ $is_license_valid = $license_client->isLicenseValid();
 
 $auth_email_message = '';
 $auth_email_error = '';
+
+function fetch_users_by_scope(mysqli $conn, string $role, ?int $user_id): array {
+    $users = [];
+
+    if ($role === 'superadmin') {
+        $users_stmt = $conn->prepare("SELECT u.id, u.username, u.telegram_id, u.status, u.created_at, u.role, u.created_by_admin_id, creator.username AS creator_username FROM users u LEFT JOIN users creator ON u.created_by_admin_id = creator.id ORDER BY u.id DESC");
+    } else {
+        $users_stmt = $conn->prepare("SELECT u.id, u.username, u.telegram_id, u.status, u.created_at, u.role, u.created_by_admin_id, creator.username AS creator_username FROM users u LEFT JOIN users creator ON u.created_by_admin_id = creator.id WHERE u.role = 'user' AND u.created_by_admin_id = ? ORDER BY u.id DESC");
+        $users_stmt->bind_param('i', $user_id);
+    }
+
+    if ($users_stmt) {
+        $users_stmt->execute();
+        $users_result = $users_stmt->get_result();
+        while ($user_row = $users_result->fetch_assoc()) {
+            $users[] = $user_row;
+        }
+        $users_stmt->close();
+    }
+
+    return $users;
+}
+
+$users = fetch_users_by_scope($conn, $current_user_role, $current_user_id);
 
 if (isset($_GET['delete_auth_email']) && is_numeric($_GET['delete_auth_email'])) {
     $email_id_to_delete = intval($_GET['delete_auth_email']);
@@ -244,7 +283,28 @@ if ($result_auth) {
 } else {
     $auth_email_error = "Error al obtener la lista de correos autorizados: " . $conn->error;
 }
-$emails_list = $authorized_emails_list;
+$admin_allowed_email_ids = [];
+if ($current_user_role === 'admin' && $current_user_id) {
+    $allowed_stmt = $conn->prepare("SELECT authorized_email_id FROM user_authorized_emails WHERE user_id = ?");
+    if ($allowed_stmt) {
+        $allowed_stmt->bind_param('i', $current_user_id);
+        $allowed_stmt->execute();
+        $allowed_res = $allowed_stmt->get_result();
+        while ($allowed_row = $allowed_res->fetch_assoc()) {
+            $admin_allowed_email_ids[] = (int)$allowed_row['authorized_email_id'];
+        }
+        $allowed_stmt->close();
+    }
+}
+
+if ($current_user_role === 'admin') {
+    $emails_list = array_values(array_filter($authorized_emails_list, function ($email) use ($admin_allowed_email_ids) {
+        return in_array((int)$email['id'], $admin_allowed_email_ids, true);
+    }));
+} else {
+    $emails_list = $authorized_emails_list;
+}
+
 $total_authorized_emails = count($emails_list);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
@@ -2115,16 +2175,6 @@ function testAllEnabledServers() {
                     </div>
                 </div>
                 <div class="search-results-info" id="usersSearchResultsInfo"></div>
-                <?php
-                $users_stmt = $conn->prepare("SELECT id, username, telegram_id, status, created_at FROM users ORDER BY id DESC");
-                $users_stmt->execute();
-                $users_result = $users_stmt->get_result();
-                $users = [];
-                while ($user_row = $users_result->fetch_assoc()) {
-                    $users[] = $user_row;
-                }
-                $users_stmt->close();
-                ?>
 
                 <div class="table-responsive">
                     <table class="table-admin" id="usersTable">
@@ -2133,6 +2183,8 @@ function testAllEnabledServers() {
                                 <th><i class="fas fa-hashtag me-2"></i>ID</th>
                                 <th><i class="fas fa-user me-2"></i>Usuario</th>
                                 <th><i class="fab fa-telegram me-2"></i>Telegram ID</th>
+                                <th><i class="fas fa-user-shield me-2"></i>Rol</th>
+                                <th><i class="fas fa-user-tag me-2"></i>Creador</th>
                                 <th><i class="fas fa-toggle-on me-2"></i>Estado</th>
                                 <th><i class="fas fa-calendar me-2"></i>Fecha Creación</th>
                                 <th><i class="fas fa-cogs me-2"></i>Acciones</th>
@@ -2141,22 +2193,46 @@ function testAllEnabledServers() {
                         <tbody>
                             <?php if (empty($users)): ?>
                                 <tr>
-                                    <td colspan="6" class="text-center py-4">
+                                    <td colspan="8" class="text-center py-4">
                                         <i class="fas fa-users fa-2x text-muted mb-2"></i>
                                         <p class="text-muted mb-0">No hay usuarios registrados</p>
                                     </td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($users as $user): ?>
+                                <?php
+                                    $is_foreign_admin_user = ($current_user_role === 'superadmin' && !empty($user['created_by_admin_id']) && $user['role'] === 'user');
+                                    $can_manage_user = ($current_user_role === 'superadmin' && !$is_foreign_admin_user)
+                                        || ($current_user_role === 'admin' && $user['role'] === 'user' && (int)$user['created_by_admin_id'] === (int)$current_user_id);
+                                ?>
                                 <tr>
                                     <td><?= htmlspecialchars($user['id']) ?></td>
                                     <td>
                                         <i class="fas fa-user-circle me-2 text-primary"></i>
                                         <?= htmlspecialchars($user['username']) ?>
+                                        <?php if (!empty($user['created_by_admin_id']) && !empty($user['creator_username'])): ?>
+                                            <span class="badge-admin badge-info-admin ms-2"><i class="fas fa-user-tag me-1"></i><?= htmlspecialchars($user['creator_username']) ?></span>
+                                        <?php endif; ?>
                                     </td>
                                     <td><?= htmlspecialchars($user['telegram_id'] ?? '') ?></td>
                                     <td>
-                                        <?php if ($user['status'] == 1): ?>
+                                        <?php if ($user['role'] === 'superadmin'): ?>
+                                            <span class="badge-admin badge-warning-admin">Super Admin</span>
+                                        <?php elseif ($user['role'] === 'admin'): ?>
+                                            <span class="badge-admin badge-primary-admin">Admin</span>
+                                        <?php else: ?>
+                                            <span class="badge-admin badge-secondary-admin">Usuario</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($user['creator_username'])): ?>
+                                            <?= htmlspecialchars($user['creator_username']) ?>
+                                        <?php else: ?>
+                                            <span class="text-muted">Super Admin</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ((int)$user['status'] === 1): ?>
                                             <span class="badge-admin badge-success-admin">
                                                 <i class="fas fa-check"></i> Activo
                                             </span>
@@ -2172,10 +2248,10 @@ function testAllEnabledServers() {
                                     </td>
                                     <td>
                                         <div class="d-flex gap-sm">
-                                            <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="editUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>', '<?= htmlspecialchars($user['telegram_id'] ?? '') ?>', <?= $user['status'] ?>)">
+                                            <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="editUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>', '<?= htmlspecialchars($user['telegram_id'] ?? '') ?>', <?= (int)$user['status'] ?>)" <?= $can_manage_user ? '' : 'disabled' ?>>
                                                 <i class="fas fa-edit"></i> Editar
                                             </button>
-                                            <button class="btn-admin btn-danger-admin btn-sm-admin" onclick="deleteUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')">
+                                            <button class="btn-admin btn-danger-admin btn-sm-admin" onclick="deleteUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')" <?= $can_manage_user ? '' : 'disabled' ?>>
                                                 <i class="fas fa-trash"></i> Eliminar
                                             </button>
                                         </div>
@@ -2481,15 +2557,12 @@ function testAllEnabledServers() {
         
 
 <?php
-$users_list = [];
-$users_stmt = $conn->prepare("SELECT id, username, telegram_id, status, created_at FROM users WHERE role NOT IN ('admin','superadmin') ORDER BY id DESC");
-$users_stmt->execute();
-$users_result = $users_stmt->get_result();
-while ($user_row = $users_result->fetch_assoc()) {
-    $users_list[] = $user_row;
-}
-$users_stmt->close();
-$users = $users_list;
+$users_list = array_values(array_filter($users, function ($user) use ($current_user_role, $current_user_id) {
+    if ($current_user_role === 'superadmin') {
+        return true; // Mostrar todos los usuarios al superadmin
+    }
+    return $user['role'] === 'user' && (int)($user['created_by_admin_id'] ?? 0) === (int)$current_user_id;
+}));
 ?>
 
 <div class="tab-pane fade" id="asignaciones" role="tabpanel">
@@ -2560,7 +2633,8 @@ $users = $users_list;
         <div id="users-permissions-container">
             <?php if (!empty($users_list)): ?>
                 <?php foreach ($users_list as $user): ?>
-                    <div class="user-permission-card" data-user-id="<?= $user['id'] ?>" data-username="<?= htmlspecialchars($user['username']) ?>">
+                    <?php $locked_by_admin = ($current_user_role === 'superadmin' && $user['role'] === 'user' && !empty($user['created_by_admin_id'])); ?>
+                    <div class="user-permission-card" data-user-id="<?= $user['id'] ?>" data-username="<?= htmlspecialchars($user['username']) ?>" data-locked="<?= $locked_by_admin ? '1' : '0' ?>">
                         <!-- Header del usuario -->
                         <div class="user-permission-header" onclick="toggleUserPermissions(<?= $user['id'] ?>)">
                             <div class="user-info-display">
@@ -2570,7 +2644,13 @@ $users = $users_list;
                                 <div class="user-details-display">
                                     <h5 class="user-name-display">
                                         <?= htmlspecialchars($user['username']) ?>
-                                        <span class="status-indicator <?= $user['status'] === 'active' ? 'status-active' : 'status-inactive' ?>"></span>
+                                        <span class="status-indicator <?= ((int)$user['status'] === 1) ? 'status-active' : 'status-inactive' ?>"></span>
+                                        <?php if (!empty($user['creator_username'])): ?>
+                                            <span class="badge-admin badge-info-admin ms-2"><i class="fas fa-user-tag me-1"></i><?= htmlspecialchars($user['creator_username']) ?></span>
+                                        <?php endif; ?>
+                                        <?php if ($user['role'] === 'admin'): ?>
+                                            <span class="badge-admin badge-primary-admin ms-2">Admin</span>
+                                        <?php endif; ?>
                                     </h5>
                                     <div class="user-meta-display">
                                     <i class="fas fa-envelope me-1"></i>
@@ -2608,7 +2688,7 @@ $users = $users_list;
                                         Correos Autorizados
                                     </h6>
                                     <div class="permission-actions">
-                                        <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="openAdvancedEmailModal(<?= $user['id'] ?>, '<?= htmlspecialchars(addslashes($user['username'])) ?>')">
+                                        <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="openAdvancedEmailModal(<?= $user['id'] ?>, '<?= htmlspecialchars(addslashes($user['username'])) ?>')" <?= $locked_by_admin ? 'disabled' : '' ?> >
                                             <i class="fas fa-plus me-1"></i>Agregar Correos
                                         </button>
                                     </div>
@@ -2636,7 +2716,7 @@ $users = $users_list;
                                         Asuntos por Plataforma
                                     </h6>
                                     <div class="permission-actions">
-                                        <button class="btn-admin btn-outline-admin btn-sm-admin" onclick="refreshUserSubjects(<?= $user['id'] ?>)">
+                                        <button class="btn-admin btn-outline-admin btn-sm-admin" onclick="refreshUserSubjects(<?= $user['id'] ?>)" <?= $locked_by_admin ? 'disabled' : '' ?> >
                                             <i class="fas fa-sync me-1"></i>Actualizar
                                         </button>
                                     </div>
@@ -2652,14 +2732,17 @@ $users = $users_list;
 
                             <!-- Botones de acción -->
                             <div class="user-actions-footer">
-                                <button class="btn-admin btn-success-admin" onclick="saveAllUserPermissions(<?= $user['id'] ?>)">
+                                <button class="btn-admin btn-success-admin" onclick="saveAllUserPermissions(<?= $user['id'] ?>)" <?= $locked_by_admin ? 'disabled' : '' ?> >
                                     <i class="fas fa-save me-2"></i>
                                     Guardar Cambios para <?= htmlspecialchars($user['username']) ?>
                                 </button>
-                                <button class="btn-admin btn-secondary-admin" onclick="resetUserPermissions(<?= $user['id'] ?>)">
+                                <button class="btn-admin btn-secondary-admin" onclick="resetUserPermissions(<?= $user['id'] ?>)" <?= $locked_by_admin ? 'disabled' : '' ?> >
                                     <i class="fas fa-undo me-2"></i>
                                     Resetear
                                 </button>
+                                <?php if ($locked_by_admin): ?>
+                                    <div class="text-warning mt-2"><i class="fas fa-lock me-1"></i>Usuario gestionado por su Admin creador.</div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -3277,14 +3360,19 @@ function resetUserPermissions(userId) {
 // Función para guardar todos los usuarios (acción global)
 function saveAllUsersPermissions() {
     const expandedUsers = document.querySelectorAll('.user-permissions-content[style*="block"]');
-    
-    if (expandedUsers.length === 0) {
+
+    const permittedUsers = Array.from(expandedUsers).filter(content => {
+        const card = content.closest('.user-permission-card');
+        return !card || card.dataset.locked !== '1';
+    });
+
+    if (permittedUsers.length === 0) {
         alert('No hay usuarios expandidos para guardar. Expande al menos un usuario para guardar sus cambios.');
         return;
     }
-    
-    if (confirm(`¿Guardar cambios para ${expandedUsers.length} usuario(s)?`)) {
-        const promises = Array.from(expandedUsers).map(content => {
+
+    if (confirm(`¿Guardar cambios para ${permittedUsers.length} usuario(s)?`)) {
+        const promises = permittedUsers.map(content => {
             const userId = content.id.replace('permissions-content-', '');
             return saveAllUserPermissions(userId);
         });
@@ -3433,6 +3521,22 @@ document.head.appendChild(style);
                             Usuario Activo
                         </label>
                     </div>
+
+                    <?php if ($current_user_role === 'superadmin'): ?>
+                        <div class="form-group-admin mt-3">
+                            <label for="role" class="form-label-admin">
+                                <i class="fas fa-user-shield me-2"></i>
+                                Rol del Usuario
+                            </label>
+                            <select class="form-control-admin" id="role" name="role" required>
+                                <option value="" disabled selected>Selecciona un rol</option>
+                                <option value="admin">Admin</option>
+                                <option value="user">Usuario</option>
+                            </select>
+                        </div>
+                    <?php else: ?>
+                        <input type="hidden" name="role" value="user">
+                    <?php endif; ?>
                 </div>
                 
                 <div class="modal-footer">

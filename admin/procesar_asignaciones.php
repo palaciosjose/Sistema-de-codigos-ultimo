@@ -20,6 +20,50 @@ function is_ajax_request() {
         strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 }
 
+function can_manage_user(mysqli $conn, string $current_role, ?int $current_id, int $target_user_id) {
+    $stmt = $conn->prepare("SELECT id, role, created_by_admin_id FROM users WHERE id = ?");
+    $stmt->bind_param('i', $target_user_id);
+    $stmt->execute();
+    $user_row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$user_row) {
+        return false;
+    }
+
+    if ($current_role === 'superadmin') {
+        if (!empty($user_row['created_by_admin_id']) && $user_row['role'] === 'user') {
+            return false;
+        }
+        return $user_row;
+    }
+
+    if ($current_role === 'admin' && $user_row['role'] === 'user' && (int)$user_row['created_by_admin_id'] === (int)$current_id) {
+        return $user_row;
+    }
+
+    return false;
+}
+
+function get_admin_allowed_emails(mysqli $conn, string $current_role, ?int $current_id): ?array {
+    if ($current_role !== 'admin' || !$current_id) {
+        return null;
+    }
+
+    $allowed = [];
+    $stmt = $conn->prepare("SELECT authorized_email_id FROM user_authorized_emails WHERE user_id = ?");
+    if ($stmt) {
+        $stmt->bind_param('i', $current_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $allowed[] = (int)$row['authorized_email_id'];
+        }
+        $stmt->close();
+    }
+    return $allowed;
+}
+
 if ($conn->connect_error) {
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'error' => 'Error de conexión a la base de datos: ' . $conn->connect_error]);
@@ -27,6 +71,21 @@ if ($conn->connect_error) {
 }
 
 $action = $_REQUEST['action'] ?? null;
+
+function ensure_created_by_admin_column(mysqli $conn): void {
+    $column_check = $conn->query("SHOW COLUMNS FROM users LIKE 'created_by_admin_id'");
+    if ($column_check && $column_check->num_rows === 0) {
+        $conn->query("ALTER TABLE users ADD COLUMN created_by_admin_id INT NULL AFTER role, ADD INDEX idx_created_by_admin (created_by_admin_id)");
+    }
+    if ($column_check instanceof mysqli_result) {
+        $column_check->close();
+    }
+}
+
+ensure_created_by_admin_column($conn);
+
+$current_user_role = $_SESSION['user_role'] ?? 'user';
+$current_user_id = $_SESSION['user_id'] ?? null;
 
 // Manejar diferentes métodos HTTP
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -97,6 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 function assignEmailsToUser($conn) {
+    global $current_user_role, $current_user_id;
+
     $user_id   = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT);
     $email_ids = $_POST['email_ids'] ?? [];
     $assigned_by = $_SESSION['user_id'] ?? null;
@@ -105,24 +166,23 @@ function assignEmailsToUser($conn) {
         $_SESSION['assignment_error'] = 'Datos incompletos para la asignación.';
         return false;
     }
-    
-    // Verificar que el usuario existe
-    $stmt_check = $conn->prepare("SELECT id FROM users WHERE id = ?");
-    if (!$stmt_check) {
-        $_SESSION['assignment_error'] = 'Error al preparar consulta de verificación de usuario: ' . $conn->error;
+
+    $manageable_user = can_manage_user($conn, $current_user_role, $current_user_id, $user_id);
+    if (!$manageable_user) {
+        $_SESSION['assignment_error'] = 'No tienes permisos para administrar este usuario.';
         return false;
     }
-    
-    $stmt_check->bind_param("i", $user_id);
-    $stmt_check->execute();
-    $result = $stmt_check->get_result();
-    
-    if ($result->num_rows == 0) {
-        $_SESSION['assignment_error'] = 'Usuario no encontrado.';
-        $stmt_check->close();
-        return false;
+
+    $allowed_ids = get_admin_allowed_emails($conn, $current_user_role, $current_user_id);
+    if (is_array($allowed_ids)) {
+        $email_ids = array_values(array_filter($email_ids, function ($id) use ($allowed_ids) {
+            return in_array((int)$id, $allowed_ids, true);
+        }));
+        if (empty($email_ids) && !empty($_POST['email_ids'])) {
+            $_SESSION['assignment_error'] = 'Solo puedes asignar correos que te haya habilitado el Super Admin.';
+            return false;
+        }
     }
-    $stmt_check->close();
     
     // Iniciar transacción
     $conn->begin_transaction();
@@ -182,6 +242,8 @@ function assignEmailsToUser($conn) {
 function addEmailsToUser($conn) {
     header('Content-Type: application/json');
 
+    global $current_user_role, $current_user_id;
+
     $user_id   = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT);
     $email_ids = $_POST['email_ids'] ?? [];
     $assigned_by = $_SESSION['user_id'] ?? null;
@@ -189,6 +251,18 @@ function addEmailsToUser($conn) {
     if (!$user_id || !is_array($email_ids)) {
         echo json_encode(['success' => false, 'error' => 'Datos incompletos para la asignación']);
         exit();
+    }
+
+    if (!can_manage_user($conn, $current_user_role, $current_user_id, $user_id)) {
+        echo json_encode(['success' => false, 'error' => 'No tienes permisos para administrar este usuario']);
+        exit();
+    }
+
+    $allowed_ids = get_admin_allowed_emails($conn, $current_user_role, $current_user_id);
+    if (is_array($allowed_ids)) {
+        $email_ids = array_values(array_filter($email_ids, function ($id) use ($allowed_ids) {
+            return in_array((int)$id, $allowed_ids, true);
+        }));
     }
 
     if (empty($email_ids)) {
@@ -220,12 +294,19 @@ function addEmailsToUser($conn) {
 
 function removeEmailFromUser($conn) {
     header('Content-Type: application/json');
-    
+
+    global $current_user_role, $current_user_id;
+
     $user_id = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT);
     $email_id = filter_var($_POST['email_id'] ?? null, FILTER_VALIDATE_INT);
     
     if (!$user_id || !$email_id) {
         echo json_encode(['success' => false, 'error' => 'Datos incompletos para eliminar asignación']);
+        exit();
+    }
+
+    if (!can_manage_user($conn, $current_user_role, $current_user_id, $user_id)) {
+        echo json_encode(['success' => false, 'error' => 'No tienes permisos para administrar este usuario']);
         exit();
     }
     
@@ -248,6 +329,8 @@ function removeEmailFromUser($conn) {
 }
 
 function getUserEmails($conn) {
+    global $current_user_role, $current_user_id;
+
     // Limpiar cualquier salida previa
     if (ob_get_level()) {
         ob_clean();
@@ -258,11 +341,30 @@ function getUserEmails($conn) {
     header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
     
     $user_id = filter_var($_GET['user_id'] ?? null, FILTER_VALIDATE_INT);
-    
+
     if (!$user_id) {
         echo json_encode(['success' => false, 'error' => 'ID de usuario inválido']);
         exit();
     }
+
+    $manageable_user = can_manage_user($conn, $current_user_role, $current_user_id, $user_id);
+    if (!$manageable_user) {
+        if ($current_user_role !== 'superadmin') {
+            echo json_encode(['success' => false, 'error' => 'No tienes permisos para ver los correos de este usuario']);
+            exit();
+        }
+        $user_exists_stmt = $conn->prepare("SELECT id FROM users WHERE id = ?");
+        $user_exists_stmt->bind_param('i', $user_id);
+        $user_exists_stmt->execute();
+        $user_exists = $user_exists_stmt->get_result()->num_rows > 0;
+        $user_exists_stmt->close();
+        if (!$user_exists) {
+            echo json_encode(['success' => false, 'error' => 'Usuario no encontrado']);
+            exit();
+        }
+    }
+
+    $allowed_ids = get_admin_allowed_emails($conn, $current_user_role, $current_user_id);
     
     $query = "
         SELECT ae.id, ae.email, uae.assigned_at 
@@ -285,6 +387,9 @@ function getUserEmails($conn) {
 
         $emails = [];
         while ($row = $result->fetch_assoc()) {
+            if (is_array($allowed_ids) && !in_array((int)$row['id'], $allowed_ids, true)) {
+                continue;
+            }
             $emails[] = [
                 'id' => $row['id'],
                 'email' => $row['email'],
@@ -292,11 +397,15 @@ function getUserEmails($conn) {
             ];
         }
 
-        $total_result = $conn->query("SELECT COUNT(*) AS total FROM authorized_emails");
-        $total_row = $total_result ? $total_result->fetch_assoc() : ['total' => 0];
-        $total_available = (int)($total_row['total'] ?? 0);
-        if ($total_result instanceof mysqli_result) {
-            $total_result->close();
+        if (is_array($allowed_ids)) {
+            $total_available = count($allowed_ids);
+        } else {
+            $total_result = $conn->query("SELECT COUNT(*) AS total FROM authorized_emails");
+            $total_row = $total_result ? $total_result->fetch_assoc() : ['total' => 0];
+            $total_available = (int)($total_row['total'] ?? 0);
+            if ($total_result instanceof mysqli_result) {
+                $total_result->close();
+            }
         }
 
         echo json_encode([
@@ -315,6 +424,8 @@ function getUserEmails($conn) {
 }
 
 function getAvailableEmails($conn) {
+    global $current_user_role, $current_user_id;
+
     if (ob_get_level()) {
         ob_clean();
     }
@@ -331,14 +442,41 @@ function getAvailableEmails($conn) {
         exit();
     }
 
+    if (!can_manage_user($conn, $current_user_role, $current_user_id, $user_id)) {
+        echo json_encode(['success' => false, 'error' => 'No tienes permisos para asignar correos a este usuario']);
+        exit();
+    }
+
+    $allowed_ids = get_admin_allowed_emails($conn, $current_user_role, $current_user_id);
+    $filter_by_allowed = is_array($allowed_ids);
+
     $like = '%' . $q . '%';
-    $stmt = $conn->prepare("SELECT id, email FROM authorized_emails WHERE email LIKE ? AND id NOT IN (SELECT authorized_email_id FROM user_authorized_emails WHERE user_id = ?) ORDER BY email ASC LIMIT ? OFFSET ?");
+    $base_query = "SELECT id, email FROM authorized_emails WHERE email LIKE ? AND id NOT IN (SELECT authorized_email_id FROM user_authorized_emails WHERE user_id = ?)%s ORDER BY email ASC LIMIT ? OFFSET ?";
+    $permission_clause = '';
+    if ($filter_by_allowed) {
+        if (empty($allowed_ids)) {
+            echo json_encode(['success' => true, 'emails' => [], 'has_more' => false]);
+            exit();
+        }
+        $placeholders = implode(',', array_fill(0, count($allowed_ids), '?'));
+        $permission_clause = " AND id IN ($placeholders)";
+    }
+
+    $query = sprintf($base_query, $permission_clause);
+    $stmt = $conn->prepare($query);
     if (!$stmt) {
         echo json_encode(['success' => false, 'error' => 'Error al preparar la consulta: ' . $conn->error]);
         exit();
     }
 
-    $stmt->bind_param('siii', $like, $user_id, $limit, $offset);
+    $types = 'sii';
+    $params = [$like, $user_id, $limit, $offset];
+    if ($filter_by_allowed) {
+        $types = 'si' . str_repeat('i', count($allowed_ids)) . 'ii';
+        $params = array_merge([$like, $user_id], $allowed_ids, [$limit, $offset]);
+    }
+
+    $stmt->bind_param($types, ...$params);
 
     if ($stmt->execute()) {
         $result = $stmt->get_result();
@@ -357,6 +495,8 @@ function getAvailableEmails($conn) {
 }
 
 function getAllAvailableEmails($conn) {
+    global $current_user_role, $current_user_id;
+
     if (ob_get_level()) {
         ob_clean();
     }
@@ -371,14 +511,39 @@ function getAllAvailableEmails($conn) {
         exit();
     }
 
+    if (!can_manage_user($conn, $current_user_role, $current_user_id, $user_id)) {
+        echo json_encode(['success' => false, 'error' => 'No tienes permisos para asignar correos a este usuario']);
+        exit();
+    }
+
+    $allowed_ids = get_admin_allowed_emails($conn, $current_user_role, $current_user_id);
+
     $like = '%' . $q . '%';
-    $stmt = $conn->prepare("SELECT id FROM authorized_emails WHERE email LIKE ? AND id NOT IN (SELECT authorized_email_id FROM user_authorized_emails WHERE user_id = ?)");
+    $base_query = "SELECT id FROM authorized_emails WHERE email LIKE ? AND id NOT IN (SELECT authorized_email_id FROM user_authorized_emails WHERE user_id = ?)%s";
+    $permission_clause = '';
+    if (is_array($allowed_ids)) {
+        if (empty($allowed_ids)) {
+            echo json_encode(['success' => true, 'email_ids' => []]);
+            exit();
+        }
+        $placeholders = implode(',', array_fill(0, count($allowed_ids), '?'));
+        $permission_clause = " AND id IN ($placeholders)";
+    }
+
+    $stmt = $conn->prepare(sprintf($base_query, $permission_clause));
     if (!$stmt) {
         echo json_encode(['success' => false, 'error' => 'Error al preparar la consulta: ' . $conn->error]);
         exit();
     }
 
-    $stmt->bind_param('si', $like, $user_id);
+    $types = 'si';
+    $params = [$like, $user_id];
+    if (is_array($allowed_ids)) {
+        $types = 'si' . str_repeat('i', count($allowed_ids));
+        $params = array_merge([$like, $user_id], $allowed_ids);
+    }
+
+    $stmt->bind_param($types, ...$params);
 
     if ($stmt->execute()) {
         $result = $stmt->get_result();
@@ -396,6 +561,8 @@ function getAllAvailableEmails($conn) {
 }
 
 function searchEmails($conn) {
+    global $current_user_role, $current_user_id;
+
     if (ob_get_level()) {
         ob_clean();
     }
@@ -406,13 +573,31 @@ function searchEmails($conn) {
     $offset = filter_var($_GET['offset'] ?? 0, FILTER_VALIDATE_INT);
     $limit  = filter_var($_GET['limit'] ?? 50, FILTER_VALIDATE_INT);
 
-    $stmt = $conn->prepare("SELECT id, email FROM authorized_emails WHERE email LIKE CONCAT('%', ?, '%') ORDER BY email LIMIT ?, ?");
+    $allowed_ids = get_admin_allowed_emails($conn, $current_user_role, $current_user_id);
+    $permission_clause = '';
+    if (is_array($allowed_ids)) {
+        if (empty($allowed_ids)) {
+            echo json_encode(['success' => true, 'emails' => [], 'total' => 0]);
+            exit();
+        }
+        $placeholders = implode(',', array_fill(0, count($allowed_ids), '?'));
+        $permission_clause = " AND id IN ($placeholders)";
+    }
+
+    $stmt = $conn->prepare("SELECT id, email FROM authorized_emails WHERE email LIKE CONCAT('%', ?, '%')" . $permission_clause . " ORDER BY email LIMIT ?, ?");
     if (!$stmt) {
         echo json_encode(['success' => false, 'error' => 'Error al preparar la consulta: ' . $conn->error]);
         exit();
     }
 
-    $stmt->bind_param('sii', $query, $offset, $limit);
+    $types = 'sii';
+    $params = [$query, $offset, $limit];
+    if (is_array($allowed_ids)) {
+        $types = 's' . str_repeat('i', count($allowed_ids)) . 'ii';
+        $params = array_merge([$query], $allowed_ids, [$offset, $limit]);
+    }
+
+    $stmt->bind_param($types, ...$params);
 
     if ($stmt->execute()) {
         $result = $stmt->get_result();
@@ -422,9 +607,15 @@ function searchEmails($conn) {
         }
         $stmt->close();
 
-        $count_stmt = $conn->prepare("SELECT COUNT(*) AS total FROM authorized_emails WHERE email LIKE CONCAT('%', ?, '%')");
+        $count_stmt = $conn->prepare("SELECT COUNT(*) AS total FROM authorized_emails WHERE email LIKE CONCAT('%', ?, '%')" . $permission_clause);
         if ($count_stmt) {
-            $count_stmt->bind_param('s', $query);
+            $count_types = 's';
+            $count_params = [$query];
+            if (is_array($allowed_ids)) {
+                $count_types = 's' . str_repeat('i', count($allowed_ids));
+                $count_params = array_merge([$query], $allowed_ids);
+            }
+            $count_stmt->bind_param($count_types, ...$count_params);
             $count_stmt->execute();
             $count_res = $count_stmt->get_result();
             $total = (int)($count_res->fetch_assoc()['total'] ?? 0);
