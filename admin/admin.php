@@ -123,6 +123,8 @@ $is_license_valid = $license_client->isLicenseValid();
 
 $auth_email_message = '';
 $auth_email_error = '';
+$logs_message = '';
+$logs_error = '';
 
 if (isset($_GET['delete_auth_email']) && is_numeric($_GET['delete_auth_email'])) {
     $email_id_to_delete = intval($_GET['delete_auth_email']);
@@ -139,6 +141,24 @@ if (isset($_GET['delete_auth_email']) && is_numeric($_GET['delete_auth_email']))
         $_SESSION['auth_email_error'] = 'Error al preparar la consulta de eliminación: ' . $conn->error;
     }
     header("Location: admin.php?tab=correos_autorizados");
+    exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_logs'])) {
+    $delete_logs_stmt = $conn->prepare("DELETE FROM logs");
+
+    if ($delete_logs_stmt && $delete_logs_stmt->execute()) {
+        $_SESSION['logs_message'] = 'Registros eliminados correctamente.';
+    } else {
+        $error_detail = $delete_logs_stmt ? $delete_logs_stmt->error : $conn->error;
+        $_SESSION['logs_error'] = 'Error al eliminar los registros: ' . $error_detail;
+    }
+
+    if ($delete_logs_stmt) {
+        $delete_logs_stmt->close();
+    }
+
+    header("Location: admin.php?tab=logs");
     exit();
 }
 
@@ -232,6 +252,14 @@ if (isset($_SESSION['auth_email_message'])) {
 if (isset($_SESSION['auth_email_error'])) {
     $auth_email_error = $_SESSION['auth_email_error'];
     unset($_SESSION['auth_email_error']);
+}
+if (isset($_SESSION['logs_message'])) {
+    $logs_message = $_SESSION['logs_message'];
+    unset($_SESSION['logs_message']);
+}
+if (isset($_SESSION['logs_error'])) {
+    $logs_error = $_SESSION['logs_error'];
+    unset($_SESSION['logs_error']);
 }
 
 $authorized_emails_list = [];
@@ -2202,8 +2230,16 @@ function testAllEnabledServers() {
                         <i class="fas fa-list-alt me-2"></i>
                         Registro de Consultas
                     </h3>
+                    <div class="action-buttons-group">
+                        <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar todos los registros de consultas? Esta acción no se puede deshacer.');">
+                            <input type="hidden" name="clear_logs" value="1">
+                            <button type="submit" class="btn-admin btn-danger-admin">
+                                <i class="fas fa-trash-alt"></i> Eliminar registros
+                            </button>
+                        </form>
+                    </div>
                 </div>
-                
+
                 <?php
                 $logs_per_page = 20;
                 $total_logs_query = $conn->query("SELECT COUNT(*) as total FROM logs");
@@ -2232,6 +2268,20 @@ function testAllEnabledServers() {
                 }
                 $logs_paged_stmt->close();
                 ?>
+
+                <?php if ($logs_message): ?>
+                    <div class="alert-admin alert-success-admin">
+                        <i class="fas fa-check-circle"></i>
+                        <span><?= htmlspecialchars($logs_message) ?></span>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($logs_error): ?>
+                    <div class="alert-admin alert-danger-admin">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <span><?= htmlspecialchars($logs_error) ?></span>
+                    </div>
+                <?php endif; ?>
 
                 <div class="table-responsive">
                     <table class="table-admin">
