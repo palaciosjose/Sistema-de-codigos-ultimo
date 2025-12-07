@@ -70,6 +70,14 @@ $current_user_id = $_SESSION['user_id'] ?? null;
 $current_user_role = $_SESSION['user_role'] ?? 'user';
 $is_superadmin = $current_user_role === 'superadmin';
 $is_admin = $current_user_role === 'admin';
+$allowed_tabs = $is_superadmin
+    ? ['config', 'users', 'asignaciones', 'servidores', 'logs', 'correos-autorizados', 'platforms', 'licencia']
+    : ($is_admin ? ['admin-config', 'users', 'asignaciones'] : []);
+
+if (empty($allowed_tabs)) {
+    http_response_code(403);
+    exit('Acceso restringido para este rol.');
+}
 
 $required_tables = ['admin', 'settings', 'email_servers', 'users', 'logs'];
 foreach ($required_tables as $table) {
@@ -126,11 +134,10 @@ if ($server_count == 0) {
 $settings = get_all_settings($conn);
 
 $tab_from_request = $_GET['tab'] ?? null;
-$active_tab = $tab_from_request ?: ($is_admin ? 'admin-config' : 'config');
-
-if ($is_admin && $active_tab === 'config') {
-    $active_tab = 'admin-config';
-}
+$default_tab = $is_superadmin ? 'config' : 'admin-config';
+$active_tab = ($tab_from_request && in_array($tab_from_request, $allowed_tabs, true))
+    ? $tab_from_request
+    : $default_tab;
 
 $admin_personalization = [
     'site_title' => '',
@@ -182,6 +189,11 @@ $auth_email_message = '';
 $auth_email_error = '';
 
 if (isset($_GET['delete_auth_email']) && is_numeric($_GET['delete_auth_email'])) {
+    if (!$is_superadmin) {
+        http_response_code(403);
+        exit('No tienes permisos para gestionar correos autorizados.');
+    }
+
     $email_id_to_delete = intval($_GET['delete_auth_email']);
     $stmt = $conn->prepare("DELETE FROM authorized_emails WHERE id = ?");
     if ($stmt) {
@@ -200,6 +212,10 @@ if (isset($_GET['delete_auth_email']) && is_numeric($_GET['delete_auth_email']))
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_email'])) {
+    if (!$is_superadmin) {
+        http_response_code(403);
+        exit('No tienes permisos para gestionar correos autorizados.');
+    }
     header('Content-Type: application/json');
 
     $new_email = filter_var(trim($_POST['new_email']), FILTER_SANITIZE_EMAIL);
@@ -241,6 +257,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_email'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_authorized_email'])) {
+    if (!$is_superadmin) {
+        http_response_code(403);
+        exit('No tienes permisos para gestionar correos autorizados.');
+    }
     header('Content-Type: application/json');
     $response = ['success' => false, 'error' => '', 'message' => ''];
 
@@ -292,16 +312,8 @@ if (isset($_SESSION['auth_email_error'])) {
 }
 
 $authorized_emails_list = [];
-$result_auth = $conn->query("SELECT id, email, created_at FROM authorized_emails ORDER BY email ASC");
-if ($result_auth) {
-    while ($row_auth = $result_auth->fetch_assoc()) {
-        $authorized_emails_list[] = $row_auth;
-    }
-    $result_auth->close();
-} else {
-    $auth_email_error = "Error al obtener la lista de correos autorizados: " . $conn->error;
-}
 $admin_allowed_email_ids = [];
+
 if ($current_user_role === 'admin' && $current_user_id) {
     $allowed_stmt = $conn->prepare("SELECT authorized_email_id FROM user_authorized_emails WHERE user_id = ?");
     if ($allowed_stmt) {
@@ -312,6 +324,31 @@ if ($current_user_role === 'admin' && $current_user_id) {
             $admin_allowed_email_ids[] = (int)$allowed_row['authorized_email_id'];
         }
         $allowed_stmt->close();
+    }
+}
+
+if ($is_superadmin) {
+    $result_auth = $conn->query("SELECT id, email, created_at FROM authorized_emails ORDER BY email ASC");
+    if ($result_auth) {
+        while ($row_auth = $result_auth->fetch_assoc()) {
+            $authorized_emails_list[] = $row_auth;
+        }
+        $result_auth->close();
+    } else {
+        $auth_email_error = "Error al obtener la lista de correos autorizados: " . $conn->error;
+    }
+} elseif (!empty($admin_allowed_email_ids)) {
+    $placeholders = implode(',', array_fill(0, count($admin_allowed_email_ids), '?'));
+    $types = str_repeat('i', count($admin_allowed_email_ids));
+    $stmt_auth = $conn->prepare("SELECT id, email, created_at FROM authorized_emails WHERE id IN ($placeholders) ORDER BY email ASC");
+    if ($stmt_auth) {
+        $stmt_auth->bind_param($types, ...$admin_allowed_email_ids);
+        $stmt_auth->execute();
+        $result_auth = $stmt_auth->get_result();
+        while ($row_auth = $result_auth->fetch_assoc()) {
+            $authorized_emails_list[] = $row_auth;
+        }
+        $stmt_auth->close();
     }
 }
 
@@ -330,7 +367,11 @@ $admin_config_error = $_SESSION['admin_config_error'] ?? null;
 unset($_SESSION['admin_config_message'], $_SESSION['admin_config_error']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
-    
+    if (!$is_superadmin) {
+        http_response_code(403);
+        exit('No tienes permisos para actualizar la configuración global.');
+    }
+
     $update_servers_only = isset($_POST['update_servers_only']) && $_POST['update_servers_only'] == '1';
     $current_tab = $_POST['current_tab'] ?? 'configuracion';
     
@@ -660,21 +701,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
         <?php if ($is_admin): ?>
         <li class="nav-item" role="presentation">
             <button class="nav-link <?= $active_tab === 'admin-config' ? 'active' : '' ?>" id="admin-config-tab" data-bs-toggle="tab" data-bs-target="#admin-config" type="button" role="tab">
-                <i class="fas fa-palette me-2"></i>Configuración
+                <i class="fas fa-user-cog me-2"></i>Mi Configuración
             </button>
         </li>
         <?php endif; ?>
 
+        <?php if ($is_superadmin): ?>
         <li class="nav-item" role="presentation">
             <button class="nav-link <?= $active_tab === 'servidores' ? 'active' : '' ?>" id="servidores-tab" data-bs-toggle="tab" data-bs-target="#servidores" type="button" role="tab">
                 <i class="fas fa-server me-2"></i>Servidores
             </button>
         </li>
+        <?php endif; ?>
         <li class="nav-item" role="presentation">
             <button class="nav-link <?= $active_tab === 'users' ? 'active' : '' ?>" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab">
                 <i class="fas fa-users me-2"></i>Usuarios
             </button>
         </li>
+        <?php if ($is_superadmin): ?>
         <li class="nav-item" role="presentation">
             <button class="nav-link <?= $active_tab === 'logs' ? 'active' : '' ?>" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab">
                 <i class="fas fa-list-alt me-2"></i>Registros
@@ -690,9 +734,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
                 <i class="fas fa-th-large me-2"></i>Plataformas
             </button>
         </li>
+        <?php endif; ?>
         <li class="nav-item" role="presentation">
             <button class="nav-link <?= $active_tab === 'asignaciones' ? 'active' : '' ?>" id="asignaciones-tab" data-bs-toggle="tab" data-bs-target="#asignaciones" type="button" role="tab" aria-controls="asignaciones" aria-selected="false">     <i class="fas fa-users-cog me-2"></i>Gestión de usuarios </button>
         </li>
+        <?php if ($is_superadmin): ?>
         <li class="nav-item" role="presentation">
             <a class="nav-link" href="telegram_management.php"><i class="fab fa-telegram me-2"></i>Bot Telegram</a>
         </li>
@@ -701,6 +747,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
                 <i class="fas fa-certificate me-2"></i>Licencia
             </button>
         </li>
+        <?php endif; ?>
     </ul>
 
     <div class="tab-content" id="adminTabContent">
@@ -1913,6 +1960,7 @@ document.addEventListener('visibilitychange', function() {
         </div>
         <?php endif; ?>
 
+<?php if ($is_superadmin): ?>
 <div class="tab-pane fade <?= $active_tab === 'servidores' ? 'show active' : '' ?>" id="servidores" role="tabpanel">
     <div class="admin-card">
         <div class="admin-card-header">
@@ -2031,7 +2079,9 @@ document.addEventListener('visibilitychange', function() {
             </div>
         </form>
     </div>
+    </div>
 </div>
+<?php endif; ?>
 
 <!-- CSS Styles para los resultados de prueba -->
 <style>
@@ -2549,7 +2599,7 @@ function testAllEnabledServers() {
                 <?php
                 $users = [];
                 if ($current_user_role === 'superadmin') {
-                    $users_stmt = $conn->prepare("SELECT u.id, u.username, u.telegram_id, u.status, u.created_at, u.role, u.created_by_admin_id, creator.username AS creator_username FROM users u LEFT JOIN users creator ON u.created_by_admin_id = creator.id ORDER BY u.id DESC");
+                    $users_stmt = $conn->prepare("SELECT u.id, u.username, u.telegram_id, u.status, u.created_at, u.role, u.created_by_admin_id, creator.username AS creator_username FROM users u LEFT JOIN users creator ON u.created_by_admin_id = creator.id WHERE NOT (u.role = 'user' AND u.created_by_admin_id IS NOT NULL) ORDER BY u.id DESC");
                 } else {
                     $users_stmt = $conn->prepare("SELECT u.id, u.username, u.telegram_id, u.status, u.created_at, u.role, u.created_by_admin_id, creator.username AS creator_username FROM users u LEFT JOIN users creator ON u.created_by_admin_id = creator.id WHERE u.role = 'user' AND u.created_by_admin_id = ? ORDER BY u.id DESC");
                     $users_stmt->bind_param('i', $current_user_id);
@@ -2921,6 +2971,7 @@ function testAllEnabledServers() {
             </div>
         </div>
 
+        <?php if ($is_superadmin): ?>
         <div class="tab-pane fade <?= $active_tab === 'logs' ? 'show active' : '' ?>" id="logs" role="tabpanel">
             <div class="admin-card">
                 <div class="admin-card-header">
@@ -3015,7 +3066,9 @@ function testAllEnabledServers() {
                 </div>
             </div>
         </div>
+        <?php endif; ?>
 
+        <?php if ($is_superadmin): ?>
         <div class="tab-pane fade <?= $active_tab === 'correos-autorizados' ? 'show active' : '' ?>" id="correos-autorizados" role="tabpanel">
             <div class="admin-card">
                 <div class="admin-card-header">
@@ -3104,6 +3157,9 @@ function testAllEnabledServers() {
             </div>
         </div>
 
+        <?php endif; ?>
+
+        <?php if ($is_superadmin): ?>
         <div class="tab-pane fade <?= $active_tab === 'platforms' ? 'show active' : '' ?>" id="platforms" role="tabpanel">
             <div class="admin-card">
                 <div class="admin-card-header">
@@ -3204,12 +3260,13 @@ function testAllEnabledServers() {
                 </div>
             </div>
         </div>
-        
+        <?php endif; ?>
+
 
 <?php
 $users_list = array_values(array_filter($users, function ($user) use ($current_user_role, $current_user_id) {
     if ($current_user_role === 'superadmin') {
-        return $user['role'] !== 'superadmin';
+        return $user['role'] !== 'superadmin' && ($user['role'] !== 'user' || empty($user['created_by_admin_id']));
     }
     return $user['role'] === 'user' && (int)($user['created_by_admin_id'] ?? 0) === (int)$current_user_id;
 }));
@@ -3425,6 +3482,7 @@ $users_list = array_values(array_filter($users, function ($user) use ($current_u
     </div>
 </div>
 
+<?php if ($is_superadmin): ?>
 <div class="tab-pane fade <?= $active_tab === 'licencia' ? 'show active' : '' ?>" id="licencia" role="tabpanel">
     <div class="admin-card">
         <div class="admin-card-header">
@@ -3489,6 +3547,7 @@ $users_list = array_values(array_filter($users, function ($user) use ($current_u
             </div>
         </div>
     </div>
+<?php endif; ?>
 </div>
 
 <!-- CSS Específico para la Gestión Unificada -->
@@ -4791,7 +4850,15 @@ document.head.appendChild(style);
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-TN3oSgBHGm7kBbJPbrQ+YwG7hO5LdK7ODgvMvFDiqPVld/UTNhaAFTq7bq5t6b13" crossorigin="anonymous"></script>
+<script>
+    if (typeof bootstrap === 'undefined') {
+        const fallbackScript = document.createElement('script');
+        fallbackScript.src = '../shared/bootstrap.bundle.min.js';
+        fallbackScript.onload = () => console.log('Bootstrap cargado desde el fallback local');
+        document.head.appendChild(fallbackScript);
+    }
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 
 <script>
