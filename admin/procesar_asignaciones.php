@@ -173,13 +173,29 @@ function assignEmailsToUser($conn) {
         return false;
     }
 
+    $target_role = $manageable_user['role'] ?? 'user';
+    $is_superadmin_editing_admin = ($current_user_role === 'superadmin' && $target_role === 'admin');
+
+    $previous_email_ids = [];
+    $previous_stmt = $conn->prepare("SELECT authorized_email_id FROM user_authorized_emails WHERE user_id = ?");
+    if ($previous_stmt) {
+        $previous_stmt->bind_param('i', $user_id);
+        if ($previous_stmt->execute()) {
+            $res_prev = $previous_stmt->get_result();
+            while ($row = $res_prev->fetch_assoc()) {
+                $previous_email_ids[] = (int)$row['authorized_email_id'];
+            }
+        }
+        $previous_stmt->close();
+    }
+
     $allowed_ids = get_admin_allowed_emails($conn, $current_user_role, $current_user_id);
     if (is_array($allowed_ids)) {
         $email_ids = array_values(array_filter($email_ids, function ($id) use ($allowed_ids) {
             return in_array((int)$id, $allowed_ids, true);
         }));
         if (empty($email_ids) && !empty($_POST['email_ids'])) {
-            $_SESSION['assignment_error'] = 'Solo puedes asignar correos que te haya habilitado el Super Admin.';
+            $_SESSION['assignment_error'] = 'No puedes asignar este correo porque no lo tienes disponible';
             return false;
         }
     }
@@ -206,7 +222,7 @@ function assignEmailsToUser($conn) {
             if (!$stmt_insert) {
                 throw new Exception('Error al preparar inserción de asignaciones: ' . $conn->error);
             }
-            
+
             $inserted = 0;
             foreach ($email_ids as $email_id) {
                 $email_id_int = filter_var($email_id, FILTER_VALIDATE_INT);
@@ -220,14 +236,38 @@ function assignEmailsToUser($conn) {
                 }
             }
             $stmt_insert->close();
-            
+
             $_SESSION['assignment_message'] = "Se asignaron $inserted correos al usuario correctamente.";
         } else {
             $_SESSION['assignment_message'] = "Se removieron todos los correos asignados al usuario.";
         }
-        
+
+        if ($is_superadmin_editing_admin && !empty($previous_email_ids)) {
+            $removed_ids = array_values(array_diff($previous_email_ids, $email_ids));
+            if (!empty($removed_ids)) {
+                $placeholders = implode(',', array_fill(0, count($removed_ids), '?'));
+                $cleanup_sql = "DELETE FROM user_authorized_emails WHERE user_id IN (SELECT id FROM users WHERE created_by_admin_id = ?) AND authorized_email_id IN ($placeholders)";
+                $cleanup_stmt = $conn->prepare($cleanup_sql);
+                if (!$cleanup_stmt) {
+                    throw new Exception('Error al preparar limpieza en cascada: ' . $conn->error);
+                }
+
+                $types = 'i' . str_repeat('i', count($removed_ids));
+                $params = array_merge([$user_id], $removed_ids);
+                $cleanup_stmt->bind_param($types, ...$params);
+                if (!$cleanup_stmt->execute()) {
+                    throw new Exception('Error al limpiar asignaciones de usuarios dependientes: ' . $cleanup_stmt->error);
+                }
+                $removed_from_children = $cleanup_stmt->affected_rows;
+                if ($removed_from_children > 0) {
+                    $_SESSION['assignment_message'] .= " Se retiraron $removed_from_children asignaciones de usuarios del admin.";
+                }
+                $cleanup_stmt->close();
+            }
+        }
+
         $conn->commit();
-        
+
     } catch (Exception $e) {
         $conn->rollback();
         $_SESSION['assignment_error'] = 'Error en la transacción de asignación: ' . $e->getMessage();
@@ -263,6 +303,10 @@ function addEmailsToUser($conn) {
         $email_ids = array_values(array_filter($email_ids, function ($id) use ($allowed_ids) {
             return in_array((int)$id, $allowed_ids, true);
         }));
+        if (empty($email_ids) && !empty($_POST['email_ids'])) {
+            echo json_encode(['success' => false, 'error' => 'No puedes asignar este correo porque no lo tienes disponible']);
+            exit();
+        }
     }
 
     if (empty($email_ids)) {

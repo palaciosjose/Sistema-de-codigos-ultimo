@@ -238,9 +238,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'save_assignment') {
     $subjects = $data['subjects'] ?? [];
     $resp = ['success' => false];
     if ($user_id && $platform_id && is_array($subjects)) {
-        if (!can_manage_user($conn, $current_user_role, $current_user_id, $user_id)) {
+        $manageable_user = can_manage_user($conn, $current_user_role, $current_user_id, $user_id);
+        if (!$manageable_user) {
             echo json_encode(['success' => false, 'error' => 'No tienes permisos para administrar este usuario']);
             exit();
+        }
+
+        $target_role = $manageable_user['role'] ?? 'user';
+        $is_superadmin_editing_admin = ($current_user_role === 'superadmin' && $target_role === 'admin');
+
+        $previous_subjects = [];
+        if ($is_superadmin_editing_admin) {
+            $previous_stmt = $conn->prepare("SELECT subject_keyword FROM user_platform_subjects WHERE user_id = ? AND platform_id = ?");
+            if ($previous_stmt) {
+                $previous_stmt->bind_param('ii', $user_id, $platform_id);
+                if ($previous_stmt->execute()) {
+                    $res_prev = $previous_stmt->get_result();
+                    while ($row = $res_prev->fetch_assoc()) {
+                        $previous_subjects[] = $row['subject_keyword'];
+                    }
+                }
+                $previous_stmt->close();
+            }
         }
 
         $allowed_subjects = get_admin_allowed_subjects($conn, $current_user_role, $current_user_id);
@@ -264,6 +283,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'save_assignment') {
                     $stmt->execute();
                 }
                 $stmt->close();
+            }
+
+            if ($is_superadmin_editing_admin && !empty($previous_subjects)) {
+                $removed_subjects = array_values(array_diff($previous_subjects, $subjects));
+                if (!empty($removed_subjects)) {
+                    $placeholders = implode(',', array_fill(0, count($removed_subjects), '?'));
+                    $cleanup_sql = "DELETE FROM user_platform_subjects WHERE user_id IN (SELECT id FROM users WHERE created_by_admin_id = ?) AND platform_id = ? AND subject_keyword IN ($placeholders)";
+                    $cleanup_stmt = $conn->prepare($cleanup_sql);
+                    if (!$cleanup_stmt) {
+                        throw new Exception('Error al preparar limpieza en cascada de asuntos: ' . $conn->error);
+                    }
+
+                    $types = 'ii' . str_repeat('s', count($removed_subjects));
+                    $params = array_merge([$user_id, $platform_id], $removed_subjects);
+                    $cleanup_stmt->bind_param($types, ...$params);
+                    if (!$cleanup_stmt->execute()) {
+                        throw new Exception('Error al limpiar asuntos de usuarios dependientes: ' . $cleanup_stmt->error);
+                    }
+                    $cleanup_stmt->close();
+                }
             }
             $conn->commit();
             $resp['success'] = true;
