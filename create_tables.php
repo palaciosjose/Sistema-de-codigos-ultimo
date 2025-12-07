@@ -171,8 +171,34 @@ if (isset($_POST['create_tables'])) {
             $conn->query("INSERT IGNORE INTO platforms (name) VALUES ('$platform')");
         }
         $tables[] = "✅ Plataformas básicas insertadas";
-        
-        // 5. Verificar tabla servers
+
+        // 5. Tabla admin_configurations
+        $sql_admin_config = "CREATE TABLE IF NOT EXISTS admin_configurations (
+            admin_id INT NOT NULL,
+            site_title VARCHAR(150) DEFAULT NULL,
+            logo_url VARCHAR(255) DEFAULT NULL,
+            web_url VARCHAR(255) DEFAULT NULL,
+            telegram_url VARCHAR(255) DEFAULT NULL,
+            whatsapp_url VARCHAR(255) DEFAULT NULL,
+            welcome_message TEXT,
+            primary_color VARCHAR(20) DEFAULT NULL,
+            accent_color VARCHAR(20) DEFAULT NULL,
+            search_limit_daily INT DEFAULT NULL,
+            search_limit_hourly INT DEFAULT NULL,
+            allowed_imap_hosts TEXT,
+            email_templates JSON NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY admin_configurations_admin_id_unique (admin_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+        if ($conn->query($sql_admin_config)) {
+            $tables[] = "✅ admin_configurations";
+        } else {
+            $tables[] = "❌ admin_configurations: " . $conn->error;
+        }
+
+        // 6. Verificar tabla servers
         $sql5 = "CREATE TABLE IF NOT EXISTS servers (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
