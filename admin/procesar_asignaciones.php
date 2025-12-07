@@ -195,7 +195,7 @@ function assignEmailsToUser($conn) {
             return in_array((int)$id, $allowed_ids, true);
         }));
         if (empty($email_ids) && !empty($_POST['email_ids'])) {
-            $_SESSION['assignment_error'] = 'Solo puedes asignar correos que te haya habilitado el Super Admin.';
+            $_SESSION['assignment_error'] = 'No puedes asignar este correo porque no lo tienes disponible';
             return false;
         }
     }
@@ -303,6 +303,10 @@ function addEmailsToUser($conn) {
         $email_ids = array_values(array_filter($email_ids, function ($id) use ($allowed_ids) {
             return in_array((int)$id, $allowed_ids, true);
         }));
+        if (empty($email_ids) && !empty($_POST['email_ids'])) {
+            echo json_encode(['success' => false, 'error' => 'No puedes asignar este correo porque no lo tienes disponible']);
+            exit();
+        }
     }
 
     if (empty($email_ids)) {

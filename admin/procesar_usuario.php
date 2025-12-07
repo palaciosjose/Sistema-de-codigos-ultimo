@@ -127,12 +127,12 @@ function createUser($conn) {
                 $config_stmt->execute();
                 $config_stmt->close();
             }
-            $_SESSION['message'] = 'Usuario creado con éxito. Ahora asigna recursos a este Admin.';
+            $_SESSION['message'] = 'Usuario creado. Ahora asigna sus permisos';
             if ($current_user_role === 'superadmin') {
                 $redirect_target = '/admin/admin.php?tab=asignaciones&focus_admin=' . $new_user_id;
             }
         } else {
-            $_SESSION['message'] = 'Usuario creado con éxito.';
+            $_SESSION['message'] = 'Usuario creado. Ahora asigna sus permisos';
         }
     } else {
         $_SESSION['message'] = 'Error al crear el usuario: ' . $stmt->error;
@@ -173,9 +173,29 @@ function updateUser($conn) {
     }
 
     if ($current_user_role === 'superadmin' && !empty($user_info['created_by_admin_id']) && $user_info['role'] === 'user') {
-        $_SESSION['message'] = 'Los usuarios creados por un Admin solo pueden ser gestionados por ese Admin.';
+        $_SESSION['message'] = 'No puedes editar este usuario porque fue creado por otro Admin';
         header('Location: /admin/admin.php');
         exit();
+    }
+
+    if ((int)$status === 1 && $user_info['role'] === 'user') {
+        $email_count_stmt = $conn->prepare("SELECT COUNT(*) AS total FROM user_authorized_emails WHERE user_id = ?");
+        $email_count_stmt->bind_param('i', $user_id);
+        $email_count_stmt->execute();
+        $email_total = ($email_count_stmt->get_result()->fetch_assoc()['total'] ?? 0);
+        $email_count_stmt->close();
+
+        $subject_count_stmt = $conn->prepare("SELECT COUNT(*) AS total FROM user_platform_subjects WHERE user_id = ?");
+        $subject_count_stmt->bind_param('i', $user_id);
+        $subject_count_stmt->execute();
+        $subject_total = ($subject_count_stmt->get_result()->fetch_assoc()['total'] ?? 0);
+        $subject_count_stmt->close();
+
+        if ($email_total === 0 || $subject_total === 0) {
+            $_SESSION['message'] = 'Debes asignar al menos 1 correo y 1 asunto para activar el usuario';
+            header('Location: /admin/admin.php');
+            exit();
+        }
     }
 
     
@@ -247,9 +267,23 @@ function deleteUser($conn) {
     }
 
     if ($current_user_role === 'superadmin' && !empty($user_info['created_by_admin_id']) && $user_info['role'] === 'user') {
-        $_SESSION['message'] = 'Los usuarios creados por un Admin solo pueden ser gestionados por ese Admin.';
+        $_SESSION['message'] = 'No puedes editar este usuario porque fue creado por otro Admin';
         header('Location: /admin/admin.php');
         exit();
+    }
+
+    if ($user_info['role'] === 'admin') {
+        $dependent_stmt = $conn->prepare("SELECT COUNT(*) AS total FROM users WHERE created_by_admin_id = ?");
+        $dependent_stmt->bind_param('i', $user_id);
+        $dependent_stmt->execute();
+        $dependent_total = ($dependent_stmt->get_result()->fetch_assoc()['total'] ?? 0);
+        $dependent_stmt->close();
+
+        if ($dependent_total > 0) {
+            $_SESSION['message'] = "Este Admin tiene $dependent_total usuarios. Elimínalo desactivará sus cuentas";
+            header('Location: /admin/admin.php');
+            exit();
+        }
     }
     
     // Actualizar los logs para establecer user_id a NULL
