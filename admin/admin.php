@@ -74,6 +74,11 @@ $allowed_tabs = $is_superadmin
     ? ['config', 'users', 'asignaciones', 'servidores', 'logs', 'correos-autorizados', 'platforms', 'licencia']
     : ($is_admin ? ['admin-config', 'users', 'asignaciones'] : []);
 
+if (empty($allowed_tabs)) {
+    http_response_code(403);
+    exit('Acceso restringido para este rol.');
+}
+
 $required_tables = ['admin', 'settings', 'email_servers', 'users', 'logs'];
 foreach ($required_tables as $table) {
     $result = $conn->query("SHOW TABLES LIKE '$table'");
@@ -129,12 +134,10 @@ if ($server_count == 0) {
 $settings = get_all_settings($conn);
 
 $tab_from_request = $_GET['tab'] ?? null;
-$default_tab = $is_admin ? 'admin-config' : 'config';
-$active_tab = $tab_from_request ?: $default_tab;
-
-if (!in_array($active_tab, $allowed_tabs, true)) {
-    $active_tab = $default_tab;
-}
+$default_tab = $is_superadmin ? 'config' : 'admin-config';
+$active_tab = ($tab_from_request && in_array($tab_from_request, $allowed_tabs, true))
+    ? $tab_from_request
+    : $default_tab;
 
 $admin_personalization = [
     'site_title' => '',
@@ -698,7 +701,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
         <?php if ($is_admin): ?>
         <li class="nav-item" role="presentation">
             <button class="nav-link <?= $active_tab === 'admin-config' ? 'active' : '' ?>" id="admin-config-tab" data-bs-toggle="tab" data-bs-target="#admin-config" type="button" role="tab">
-                <i class="fas fa-palette me-2"></i>Configuración
+                <i class="fas fa-user-cog me-2"></i>Mi Configuración
             </button>
         </li>
         <?php endif; ?>
@@ -2596,7 +2599,7 @@ function testAllEnabledServers() {
                 <?php
                 $users = [];
                 if ($current_user_role === 'superadmin') {
-                    $users_stmt = $conn->prepare("SELECT u.id, u.username, u.telegram_id, u.status, u.created_at, u.role, u.created_by_admin_id, creator.username AS creator_username FROM users u LEFT JOIN users creator ON u.created_by_admin_id = creator.id ORDER BY u.id DESC");
+                    $users_stmt = $conn->prepare("SELECT u.id, u.username, u.telegram_id, u.status, u.created_at, u.role, u.created_by_admin_id, creator.username AS creator_username FROM users u LEFT JOIN users creator ON u.created_by_admin_id = creator.id WHERE NOT (u.role = 'user' AND u.created_by_admin_id IS NOT NULL) ORDER BY u.id DESC");
                 } else {
                     $users_stmt = $conn->prepare("SELECT u.id, u.username, u.telegram_id, u.status, u.created_at, u.role, u.created_by_admin_id, creator.username AS creator_username FROM users u LEFT JOIN users creator ON u.created_by_admin_id = creator.id WHERE u.role = 'user' AND u.created_by_admin_id = ? ORDER BY u.id DESC");
                     $users_stmt->bind_param('i', $current_user_id);
@@ -3263,7 +3266,7 @@ function testAllEnabledServers() {
 <?php
 $users_list = array_values(array_filter($users, function ($user) use ($current_user_role, $current_user_id) {
     if ($current_user_role === 'superadmin') {
-        return $user['role'] !== 'superadmin';
+        return $user['role'] !== 'superadmin' && ($user['role'] !== 'user' || empty($user['created_by_admin_id']));
     }
     return $user['role'] === 'user' && (int)($user['created_by_admin_id'] ?? 0) === (int)$current_user_id;
 }));
@@ -4847,7 +4850,15 @@ document.head.appendChild(style);
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-TN3oSgBHGm7kBbJPbrQ+YwG7hO5LdK7ODgvMvFDiqPVld/UTNhaAFTq7bq5t6b13" crossorigin="anonymous"></script>
+<script>
+    if (typeof bootstrap === 'undefined') {
+        const fallbackScript = document.createElement('script');
+        fallbackScript.src = '../shared/bootstrap.bundle.min.js';
+        fallbackScript.onload = () => console.log('Bootstrap cargado desde el fallback local');
+        document.head.appendChild(fallbackScript);
+    }
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 
 <script>
