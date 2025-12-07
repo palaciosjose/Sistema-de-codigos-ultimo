@@ -2372,6 +2372,11 @@ function testAllEnabledServers() {
                 border-color: var(--accent-green);
             }
 
+            .user-role-card.focus-highlight {
+                border-color: var(--accent-cyan);
+                box-shadow: 0 0 0 2px rgba(73, 216, 255, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
+            }
+
             .user-card-main {
                 display: flex;
                 align-items: flex-start;
@@ -2520,11 +2525,27 @@ function testAllEnabledServers() {
                         </button>
                         <div class="search-box-admin">
                             <i class="fas fa-search search-icon-admin"></i>
-                            <input type="text" id="searchInputUsers" class="search-input-admin" placeholder="Buscar por usuario o Telegram ID...">
+                            <input type="text" id="searchInputUsers" class="search-input-admin" placeholder="Buscar por usuario, email, creador o estado...">
                         </div>
                     </div>
                 </div>
                 <div class="search-results-info" id="usersSearchResultsInfo"></div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <?php if ($current_user_role === 'superadmin'): ?>
+                        <div class="nav nav-pills user-filter-pills" id="userFilterPills" role="tablist">
+                            <button class="btn-admin btn-light-admin btn-sm-admin user-filter-btn active" data-filter="all" type="button">Todos (<?= $admins_count + $regular_users_count ?>)</button>
+                            <button class="btn-admin btn-light-admin btn-sm-admin user-filter-btn" data-filter="admins" type="button">Admins (<?= $admins_count ?>)</button>
+                            <button class="btn-admin btn-light-admin btn-sm-admin user-filter-btn" data-filter="users" type="button">Usuarios (<?= $regular_users_count ?>)</button>
+                            <button class="btn-admin btn-light-admin btn-sm-admin user-filter-btn" data-filter="unconfigured" type="button">Sin Configurar (<?= $unconfigured_count ?>)</button>
+                        </div>
+                    <?php elseif ($current_user_role === 'admin'): ?>
+                        <div class="nav nav-pills user-filter-pills" id="userFilterPills" role="tablist">
+                            <button class="btn-admin btn-light-admin btn-sm-admin user-filter-btn active" data-filter="all" type="button">Mis Usuarios (<?= count($users) ?>)</button>
+                            <button class="btn-admin btn-light-admin btn-sm-admin user-filter-btn" data-filter="active" type="button">Activos (<?= $admin_active_count ?>)</button>
+                            <button class="btn-admin btn-light-admin btn-sm-admin user-filter-btn" data-filter="pending" type="button">Pendientes (<?= $admin_pending_count ?>)</button>
+                        </div>
+                    <?php endif; ?>
+                </div>
                 <?php
                 $users = [];
                 if ($current_user_role === 'superadmin') {
@@ -2556,6 +2577,15 @@ function testAllEnabledServers() {
                 if ($subject_counts_res) {
                     while ($row = $subject_counts_res->fetch_assoc()) {
                         $user_subject_counts[$row['user_id']] = (int)$row['count'];
+                    }
+                }
+
+                // Emails asignados para búsqueda
+                $user_email_strings = [];
+                $email_strings_res = $conn->query("SELECT user_id, GROUP_CONCAT(email SEPARATOR ' ') AS emails FROM user_authorized_emails GROUP BY user_id");
+                if ($email_strings_res) {
+                    while ($row = $email_strings_res->fetch_assoc()) {
+                        $user_email_strings[$row['user_id']] = strtolower($row['emails'] ?? '');
                     }
                 }
 
@@ -2595,6 +2625,83 @@ function testAllEnabledServers() {
                         $direct_users[] = $user_item;
                     }
                 }
+
+                $computeStatus = function (int $emailCount, int $subjectCount, bool $readOnly = false): array {
+                    $statusClass = 'status-danger';
+                    $statusLabel = '🔴 Sin acceso';
+                    $statusKey = 'none';
+
+                    if ($emailCount > 0 && $subjectCount > 0) {
+                        $statusClass = 'status-ready';
+                        $statusLabel = '✅ Configurado';
+                        $statusKey = 'ready';
+                    } elseif ($emailCount > 0 || $subjectCount > 0) {
+                        $statusClass = 'status-warning';
+                        $statusLabel = '⚠️ Pendiente';
+                        $statusKey = 'pending';
+                    }
+
+                    if ($readOnly) {
+                        $statusClass = 'status-readonly';
+                        $statusLabel = '🔒 Solo lectura';
+                        $statusKey = 'readonly';
+                    }
+
+                    return [$statusClass, $statusLabel, $statusKey];
+                };
+
+                $admins_count = count($admins_list);
+                $regular_users_count = count($direct_users);
+                foreach ($users_by_admin as $adminUsers) {
+                    $regular_users_count += count($adminUsers);
+                }
+
+                $unconfigured_count = 0;
+                $admin_active_count = 0;
+                $admin_pending_count = 0;
+
+                foreach ($admins_list as $admin_user) {
+                    $admin_id = (int)$admin_user['id'];
+                    $admin_email_count = $user_email_counts[$admin_id] ?? 0;
+                    $admin_subject_count = $user_subject_counts[$admin_id] ?? 0;
+                    [$status_class, $status_label, $status_key] = $computeStatus($admin_email_count, $admin_subject_count);
+                    if ($status_key !== 'ready') {
+                        $unconfigured_count++;
+                    }
+                }
+
+                foreach ($users_by_admin as $adminUsers) {
+                    foreach ($adminUsers as $child_user) {
+                        $child_email = $user_email_counts[$child_user['id']] ?? 0;
+                        $child_subject = $user_subject_counts[$child_user['id']] ?? 0;
+                        [$status_class, $status_label, $status_key] = $computeStatus($child_email, $child_subject);
+                        if ($status_key !== 'ready') {
+                            $unconfigured_count++;
+                        }
+                    }
+                }
+
+                foreach ($direct_users as $direct_user) {
+                    $direct_email = $user_email_counts[$direct_user['id']] ?? 0;
+                    $direct_subject = $user_subject_counts[$direct_user['id']] ?? 0;
+                    [$status_class, $status_label, $status_key] = $computeStatus($direct_email, $direct_subject);
+                    if ($status_key !== 'ready') {
+                        $unconfigured_count++;
+                    }
+                }
+
+                if ($current_user_role === 'admin') {
+                    foreach ($users as $user) {
+                        $email_count = $user_email_counts[$user['id']] ?? 0;
+                        $subject_count = $user_subject_counts[$user['id']] ?? 0;
+                        [$status_class, $status_label, $status_key] = $computeStatus($email_count, $subject_count);
+                        if ($status_key === 'ready') {
+                            $admin_active_count++;
+                        } else {
+                            $admin_pending_count++;
+                        }
+                    }
+                }
                 ?>
 
                 <div class="user-cards-container" id="userCardsContainer">
@@ -2614,8 +2721,9 @@ function testAllEnabledServers() {
                                 $admin_subject_count = $user_subject_counts[$admin_id] ?? 0;
                                 $managed_count = $managed_user_counts[$admin_id] ?? 0;
                                 $admin_config = $admin_configurations[$admin_id] ?? null;
+                                [$admin_status_class, $admin_status_label, $admin_status_key] = $computeStatus($admin_email_count, $admin_subject_count);
                             ?>
-                            <div class="user-role-card role-admin" data-username="<?= htmlspecialchars($admin_user['username']) ?>" data-role="admin" data-creator="superadmin">
+                            <div class="user-role-card role-admin" data-username="<?= htmlspecialchars($admin_user['username']) ?>" data-role="admin" data-status="<?= $admin_status_key ?>" data-creator="superadmin" data-emails="<?= htmlspecialchars($user_email_strings[$admin_id] ?? '') ?>" id="admin-card-<?= $admin_id ?>">
                                 <div class="user-card-main">
                                     <div class="user-card-avatar">
                                         <i class="fas fa-user-tie"></i>
@@ -2639,13 +2747,22 @@ function testAllEnabledServers() {
                                         <div class="user-card-subtext">
                                             <i class="fas fa-users me-1"></i>Tiene <?= $managed_count ?> usuario<?= $managed_count === 1 ? '' : 's' ?> bajo su gestión
                                         </div>
+                                        <div class="user-card-status <?= $admin_status_class ?>">
+                                            <?= $admin_status_label ?>
+                                        </div>
                                     </div>
                                     <div class="user-card-actions">
                                         <button class="btn-admin btn-primary-admin btn-sm-admin" onclick="editUser(<?= $admin_id ?>, '<?= htmlspecialchars($admin_user['username']) ?>', '<?= htmlspecialchars($admin_user['telegram_id'] ?? '') ?>', <?= (int)$admin_user['status'] ?>)">
-                                            <i class="fas fa-edit"></i> Ver Detalles
+                                            <i class="fas fa-edit"></i> Editar
                                         </button>
                                         <button class="btn-admin btn-info-admin btn-sm-admin" data-bs-toggle="modal" data-bs-target="#adminConfigPreviewModal" data-admin-name="<?= htmlspecialchars($admin_user['username']) ?>" data-site-title="<?= htmlspecialchars($admin_config['site_title'] ?? 'Sin personalización') ?>" data-message="<?= htmlspecialchars($admin_config['welcome_message'] ?? 'Este admin aún no configuró su panel') ?>" data-web="<?= htmlspecialchars($admin_config['web_url'] ?? '') ?>" data-telegram="<?= htmlspecialchars($admin_config['telegram_url'] ?? '') ?>" data-whatsapp="<?= htmlspecialchars($admin_config['whatsapp_url'] ?? '') ?>" data-logo="<?= htmlspecialchars($admin_config['logo_url'] ?? '') ?>">
-                                            <i class="fas fa-palette"></i> Configuración
+                                            <i class="fas fa-palette"></i> Personalización
+                                        </button>
+                                        <button class="btn-admin btn-secondary-admin btn-sm-admin" onclick="focusAdminUsers(<?= $admin_id ?>)">
+                                            <i class="fas fa-users"></i> Ver Usuarios
+                                        </button>
+                                        <button class="btn-admin btn-success-admin btn-sm-admin" onclick="goToAssignments(<?= $admin_id ?>)">
+                                            <i class="fas fa-shield-alt"></i> Permisos
                                         </button>
                                     </div>
                                 </div>
@@ -2656,23 +2773,9 @@ function testAllEnabledServers() {
                                             <?php
                                                 $child_email = $user_email_counts[$child_user['id']] ?? 0;
                                                 $child_subject = $user_subject_counts[$child_user['id']] ?? 0;
-                                                $status_class = 'status-danger';
-                                                $status_label = '🔴 Sin acceso';
-
-                                                if ($child_email > 0 && $child_subject > 0) {
-                                                    $status_class = 'status-ready';
-                                                    $status_label = '✅ Configurado';
-                                                } elseif ($child_email > 0 || $child_subject > 0) {
-                                                    $status_class = 'status-warning';
-                                                    $status_label = '⚠️ Pendiente';
-                                                }
-
-                                                if ($current_user_role === 'superadmin' && !empty($child_user['created_by_admin_id'])) {
-                                                    $status_class = 'status-readonly';
-                                                    $status_label = '🔒 Solo lectura';
-                                                }
+                                                [$status_class, $status_label, $status_key] = $computeStatus($child_email, $child_subject, $current_user_role === 'superadmin' && !empty($child_user['created_by_admin_id']));
                                             ?>
-                                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($child_user['username']) ?>" data-role="user" data-creator="<?= htmlspecialchars($admin_user['username']) ?>">
+                                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($child_user['username']) ?>" data-role="user" data-status="<?= $status_key ?>" data-creator="<?= htmlspecialchars($admin_user['username']) ?>" data-emails="<?= htmlspecialchars($user_email_strings[$child_user['id']] ?? '') ?>">
                                                 <div class="user-card-main">
                                                     <div class="user-card-avatar subtle">
                                                         <i class="fas fa-user"></i>
@@ -2695,10 +2798,10 @@ function testAllEnabledServers() {
                                                         </div>
                                                     </div>
                                                     <div class="user-card-actions">
-                                                        <button class="btn-admin btn-secondary-admin btn-sm-admin" onclick="viewUserConfigOnly('<?= htmlspecialchars($child_user['username']) ?>')" disabled>
+                                                        <button class="btn-admin btn-secondary-admin btn-sm-admin" onclick="viewUserConfigOnly('<?= htmlspecialchars($child_user['username']) ?>', '<?= htmlspecialchars($admin_user['username']) ?>')">
                                                             <i class="fas fa-eye"></i> Ver Config
                                                         </button>
-                                                        <small class="text-muted">Gestionado por <?= htmlspecialchars($admin_user['username']) ?></small>
+                                                        <small class="text-muted d-block mt-1">⚠️ Gestionado por <?= htmlspecialchars($admin_user['username']) ?></small>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2715,18 +2818,9 @@ function testAllEnabledServers() {
                             <?php
                                 $direct_email = $user_email_counts[$direct_user['id']] ?? 0;
                                 $direct_subject = $user_subject_counts[$direct_user['id']] ?? 0;
-                                $direct_status_class = 'status-danger';
-                                $direct_status_label = '🔴 Sin acceso';
-
-                                if ($direct_email > 0 && $direct_subject > 0) {
-                                    $direct_status_class = 'status-ready';
-                                    $direct_status_label = '✅ Configurado';
-                                } elseif ($direct_email > 0 || $direct_subject > 0) {
-                                    $direct_status_class = 'status-warning';
-                                    $direct_status_label = '⚠️ Pendiente';
-                                }
+                                [$direct_status_class, $direct_status_label, $direct_status_key] = $computeStatus($direct_email, $direct_subject);
                             ?>
-                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($direct_user['username']) ?>" data-role="user" data-creator="superadmin">
+                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($direct_user['username']) ?>" data-role="user" data-status="<?= $direct_status_key ?>" data-creator="superadmin" data-emails="<?= htmlspecialchars($user_email_strings[$direct_user['id']] ?? '') ?>">
                                 <div class="user-card-main">
                                     <div class="user-card-avatar subtle">
                                         <i class="fas fa-user"></i>
@@ -2765,18 +2859,12 @@ function testAllEnabledServers() {
                             <?php
                                 $email_count = $user_email_counts[$user['id']] ?? 0;
                                 $subject_count = $user_subject_counts[$user['id']] ?? 0;
-                                $status_class = 'status-danger';
-                                $status_label = '🔴 Sin acceso';
-
-                                if ($email_count > 0 && $subject_count > 0) {
-                                    $status_class = 'status-ready';
+                                [$status_class, $status_label, $status_key] = $computeStatus($email_count, $subject_count);
+                                if ($status_key === 'ready') {
                                     $status_label = '✅ Configurado correctamente';
-                                } elseif ($email_count > 0 || $subject_count > 0) {
-                                    $status_class = 'status-warning';
-                                    $status_label = '⚠️ Pendiente';
                                 }
                             ?>
-                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($user['username']) ?>" data-role="user" data-creator="<?= htmlspecialchars($user['creator_username'] ?? 'admin') ?>">
+                            <div class="user-role-card role-user" data-username="<?= htmlspecialchars($user['username']) ?>" data-role="user" data-status="<?= $status_key ?>" data-creator="<?= htmlspecialchars($user['creator_username'] ?? 'admin') ?>" data-emails="<?= htmlspecialchars($user_email_strings[$user['id']] ?? '') ?>">
                                 <div class="user-card-main">
                                     <div class="user-card-avatar subtle">
                                         <i class="fas fa-user"></i>
@@ -2801,6 +2889,12 @@ function testAllEnabledServers() {
                                         </button>
                                         <button class="btn-admin btn-success-admin btn-sm-admin" onclick="goToAssignments(<?= (int)$user['id'] ?>)">
                                             <i class="fas fa-shield-alt"></i> <?= $status_class === 'status-ready' ? 'Permisos' : 'Asignar Permisos' ?>
+                                        </button>
+                                        <button class="btn-admin btn-info-admin btn-sm-admin" onclick="goToAssignmentsSection(<?= (int)$user['id'] ?>, 'emails')">
+                                            <i class="fas fa-envelope"></i> Correos
+                                        </button>
+                                        <button class="btn-admin btn-info-admin btn-sm-admin" onclick="goToAssignmentsSection(<?= (int)$user['id'] ?>, 'subjects')">
+                                            <i class="fas fa-tags"></i> Asuntos
                                         </button>
                                     </div>
                                 </div>
@@ -3221,7 +3315,7 @@ $users_list = array_values(array_filter($users, function ($user) use ($current_u
                         <div class="user-permissions-content" id="permissions-content-<?= $user['id'] ?>" style="display: none;">
                             
                             <!-- Sección de Correos Autorizados -->
-                            <div class="permission-section">
+                            <div class="permission-section" id="permission-emails-<?= $user['id'] ?>">
                                 <div class="permission-section-header">
                                     <h6 class="permission-section-title">
                                         <i class="fas fa-envelope me-2"></i>
@@ -3249,7 +3343,7 @@ $users_list = array_values(array_filter($users, function ($user) use ($current_u
                             </div>
 
                             <!-- Sección de Asuntos por Plataforma -->
-                            <div class="permission-section">
+                            <div class="permission-section" id="permission-subjects-<?= $user['id'] ?>">
                                 <div class="permission-section-header">
                                     <h6 class="permission-section-title">
                                         <i class="fas fa-tags me-2"></i>
@@ -3701,8 +3795,50 @@ function goToAssignments(userId) {
     }, 300);
 }
 
-function viewUserConfigOnly(username) {
-    alert(`Solo lectura. La configuración de ${username} es gestionada por su Admin.`);
+function goToAssignmentsSection(userId, section) {
+    const tabButton = document.getElementById('asignaciones-tab');
+    if (!tabButton) return;
+
+    const tab = new bootstrap.Tab(tabButton);
+    tab.show();
+
+    setTimeout(() => {
+        toggleUserPermissions(userId);
+        const content = document.getElementById(`permissions-content-${userId}`);
+        if (content) {
+            content.style.display = 'block';
+        }
+
+        const targetId = section === 'subjects' ? `permission-subjects-${userId}` : `permission-emails-${userId}`;
+        const target = document.getElementById(targetId);
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        const toggleBtn = document.getElementById(`toggle-btn-${userId}`);
+        const icon = toggleBtn ? toggleBtn.querySelector('i') : null;
+        if (toggleBtn && icon) {
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+            toggleBtn.innerHTML = '<i class="fas fa-chevron-up me-2"></i>Ocultar Permisos';
+        }
+    }, 300);
+}
+
+function focusAdminUsers(adminId) {
+    const card = document.getElementById(`admin-card-${adminId}`);
+    if (!card) return;
+
+    card.classList.add('focus-highlight');
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    setTimeout(() => {
+        card.classList.remove('focus-highlight');
+    }, 1600);
+}
+
+function viewUserConfigOnly(username, adminName = 'su Admin') {
+    alert(`Solo lectura. La configuración de ${username} es gestionada por ${adminName}.`);
 }
 
 // Renderiza los chips de correos asignados para un usuario
@@ -6444,6 +6580,8 @@ function setupUserCardSearch() {
     const infoContainer = document.getElementById('usersSearchResultsInfo');
     const adminCards = Array.from(document.querySelectorAll('#userCardsContainer .user-role-card.role-admin'));
     const directCards = Array.from(document.querySelectorAll('#userCardsContainer > .user-role-card:not(.role-admin)'));
+    const filterButtons = Array.from(document.querySelectorAll('.user-filter-btn'));
+    let activeFilter = 'all';
 
     if (!searchInput || !infoContainer) {
         return;
@@ -6454,7 +6592,29 @@ function setupUserCardSearch() {
         const username = (card.dataset.username || '').toLowerCase();
         const role = (card.dataset.role || '').toLowerCase();
         const creator = (card.dataset.creator || '').toLowerCase();
-        return username.includes(term) || role.includes(term) || creator.includes(term);
+        const emails = (card.dataset.emails || '').toLowerCase();
+        const status = (card.dataset.status || '').toLowerCase();
+        return username.includes(term) || role.includes(term) || creator.includes(term) || emails.includes(term) || status.includes(term);
+    };
+
+    const matchesActiveFilter = (card) => {
+        const role = (card.dataset.role || '').toLowerCase();
+        const status = (card.dataset.status || '').toLowerCase();
+
+        switch (activeFilter) {
+            case 'admins':
+                return role === 'admin';
+            case 'users':
+                return role === 'user';
+            case 'unconfigured':
+                return status !== 'ready';
+            case 'active':
+                return status === 'ready';
+            case 'pending':
+                return status !== 'ready';
+            default:
+                return true;
+        }
     };
 
     const updateResults = () => {
@@ -6464,23 +6624,23 @@ function setupUserCardSearch() {
 
         // Filtrar hijos primero
         childCards.forEach(card => {
-            const show = filter === '' || matchesFilter(card, filter);
+            const show = (filter === '' || matchesFilter(card, filter)) && matchesActiveFilter(card);
             card.style.display = show ? '' : 'none';
             if (show) visibleCount++;
         });
 
         // Administradores (se muestran si ellos o alguno de sus hijos coincide)
         adminCards.forEach(card => {
-            const matchesSelf = filter === '' || matchesFilter(card, filter);
+            const matchesSelf = (filter === '' || matchesFilter(card, filter)) && matchesActiveFilter(card);
             const hasVisibleChild = Array.from(card.querySelectorAll('.user-card-children .user-role-card')).some(c => c.style.display !== 'none');
-            const show = matchesSelf || hasVisibleChild;
+            const show = (matchesSelf || hasVisibleChild) && matchesActiveFilter(card);
             card.style.display = show ? '' : 'none';
             if (show) visibleCount++;
         });
 
         // Usuarios directos o vista admin
         directCards.forEach(card => {
-            const show = filter === '' || matchesFilter(card, filter);
+            const show = (filter === '' || matchesFilter(card, filter)) && matchesActiveFilter(card);
             card.style.display = show ? '' : 'none';
             if (show) visibleCount++;
         });
@@ -6490,6 +6650,14 @@ function setupUserCardSearch() {
     };
 
     searchInput.addEventListener('input', updateResults);
+    filterButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            filterButtons.forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            activeFilter = button.dataset.filter || 'all';
+            updateResults();
+        });
+    });
     updateResults();
 }
 
