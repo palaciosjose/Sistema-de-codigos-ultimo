@@ -39,45 +39,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
     $password = $_POST['password'];
     $entered_username = $username;
 
-    // Prioridad para administradores
-    $stmt = $conn->prepare("SELECT id, username, password FROM admin WHERE username = ?");
-    $stmt->bind_param("s", $username);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $stmt = $conn->prepare("SELECT id, username, password, role, status FROM users WHERE username = ? LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param("s", $username);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-    if ($result->num_rows > 0) {
-        $user = $result->fetch_assoc();
-        if (password_verify($password, $user['password'])) {
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['user_role'] = 'admin';
-            $_SESSION['last_activity'] = time();
-            header("Location: inicio.php");
-            exit();
+        if ($user = $result->fetch_assoc()) {
+            $branding_user_id = (int)$user['id'];
+
+            if (password_verify($password, $user['password'])) {
+                if ((int)$user['status'] !== 1) {
+                    $login_error = "La cuenta está deshabilitada.";
+                } else {
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['user_role'] = $user['role'];
+                    $_SESSION['last_activity'] = time();
+                    header("Location: inicio.php");
+                    exit();
+                }
+            }
+        }
+
+        $stmt->close();
+    }
+
+    // Compatibilidad con registros en la tabla admin (se espera rol superadmin)
+    if (empty($_SESSION['user_id'])) {
+        $stmt_admin = $conn->prepare("SELECT id, username, password FROM admin WHERE username = ?");
+        if ($stmt_admin) {
+            $stmt_admin->bind_param("s", $username);
+            $stmt_admin->execute();
+            $admin_result = $stmt_admin->get_result();
+
+            if ($admin_row = $admin_result->fetch_assoc()) {
+                if (password_verify($password, $admin_row['password'])) {
+                    $role_lookup = $conn->prepare("SELECT role FROM users WHERE username = ? LIMIT 1");
+                    $role_value = 'superadmin';
+                    if ($role_lookup) {
+                        $role_lookup->bind_param('s', $username);
+                        $role_lookup->execute();
+                        $role_result = $role_lookup->get_result();
+                        if ($role_row = $role_result->fetch_assoc()) {
+                            $role_value = $role_row['role'] ?: 'superadmin';
+                        }
+                        $role_lookup->close();
+                    }
+
+                    $_SESSION['user_id'] = $admin_row['id'];
+                    $_SESSION['username'] = $admin_row['username'];
+                    $_SESSION['user_role'] = $role_value;
+                    $_SESSION['last_activity'] = time();
+                    header("Location: inicio.php");
+                    exit();
+                }
+            }
+
+            $stmt_admin->close();
         }
     }
 
-    // Si no es admin, buscar en usuarios regulares
-    $stmt = $conn->prepare("SELECT id, username, password FROM users WHERE username = ? AND status = 1");
-    $stmt->bind_param("s", $username);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    if ($result->num_rows > 0) {
-        $user = $result->fetch_assoc();
-        $branding_user_id = (int)$user['id'];
-        if (password_verify($password, $user['password'])) {
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['user_role'] = 'usuario';
-            $_SESSION['last_activity'] = time();
-            header("Location: inicio.php");
-            exit();
-        }
+    if (empty($_SESSION['user_id']) && empty($login_error)) {
+        $login_error = "Usuario o contraseña incorrectos.";
     }
-    
-    $login_error = "Usuario o contraseña incorrectos.";
-    $stmt->close();
 }
 
 // Obtener todas las configuraciones para usar el logo
