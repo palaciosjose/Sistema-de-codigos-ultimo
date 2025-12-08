@@ -4846,55 +4846,256 @@ document.head.appendChild(style);
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-TN3oSgBHGm7kBbJPbrQ+YwG7hO5LdK7ODgvMvFDiqPVld/UTNhaAFTq7bq5t6b13" crossorigin="anonymous"></script>
-<script>
-    if (typeof bootstrap === 'undefined') {
-        const fallbackScript = document.createElement('script');
-        fallbackScript.src = '../shared/bootstrap.bundle.min.js';
-        fallbackScript.onload = () => console.log('Bootstrap cargado desde el fallback local');
-        document.head.appendChild(fallbackScript);
-    }
-</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 
 <script>
-// Utilidad para asegurar que Bootstrap esté disponible antes de ejecutar código que lo requiere
-function whenBootstrapReady(callback) {
-    if (window.bootstrap) {
+// ============================================
+// SOLUCIÓN DEFINITIVA PARA TABS
+// ============================================
+
+// Variables de control global
+let bootstrapAttempts = 0;
+let bootstrapMaxAttempts = 100; // 100 intentos x 50ms = 5 segundos
+let bootstrapReady = false;
+let tabsInitialized = false;
+
+/**
+ * FUNCIÓN 1: Esperar a que Bootstrap esté listo
+ * Esta función verifica cada 50ms si Bootstrap está disponible
+ */
+function waitForBootstrap(callback) {
+    console.log('🔄 Verificando si Bootstrap está listo...');
+    
+    // Si Bootstrap ya está listo, ejecutar callback inmediatamente
+    if (window.bootstrap && typeof bootstrap.Tab === 'function') {
+        console.log('✅ Bootstrap detectado y listo!');
+        bootstrapReady = true;
         callback();
         return;
     }
-
-    const bootstrapScript = document.querySelector('script[src*="bootstrap"]');
-    const handleReady = () => {
-        if (!window.bootstrap) return;
-        if (bootstrapScript) {
-            bootstrapScript.removeEventListener('load', handleReady);
-        }
-        window.removeEventListener('load', handleReady);
-        callback();
-    };
-
-    if (bootstrapScript) {
-        bootstrapScript.addEventListener('load', handleReady, { once: true });
+    
+    // Si no está listo, intentar de nuevo en 50ms
+    bootstrapAttempts++;
+    
+    if (bootstrapAttempts >= bootstrapMaxAttempts) {
+        console.error('❌ ERROR: Bootstrap no se cargó después de 5 segundos');
+        console.error('⚠️ Intentando activar tabs manualmente...');
+        activateTabsManually();
+        return;
     }
-    window.addEventListener('load', handleReady, { once: true });
+    
+    // Reintentar después de 50ms
+    setTimeout(function() {
+        waitForBootstrap(callback);
+    }, 50);
 }
 
-function withBootstrapTab(tabButton, onReady) {
-    if (!tabButton) return;
-
-    whenBootstrapReady(() => {
-        if (!window.bootstrap || typeof bootstrap.Tab !== 'function') {
-            console.warn('Bootstrap Tab no está disponible todavía.');
-            return;
-        }
-
-        const tabInstance = bootstrap.Tab.getOrCreateInstance(tabButton);
-        if (typeof onReady === 'function') {
-            onReady(tabInstance);
+/**
+ * FUNCIÓN 2: Inicializar TODOS los tabs
+ * Esta es la función MÁS IMPORTANTE - inicializa cada tab explícitamente
+ */
+function initializeAllTabs() {
+    console.log('🔧 Iniciando inicialización de tabs...');
+    
+    // Buscar TODOS los botones de tabs
+    const tabButtons = document.querySelectorAll('[data-bs-toggle="tab"]');
+    console.log(`📊 Encontrados ${tabButtons.length} botones de tabs`);
+    
+    if (tabButtons.length === 0) {
+        console.warn('⚠️ No se encontraron botones de tabs en la página');
+        return;
+    }
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Inicializar cada tab UNO POR UNO
+    tabButtons.forEach(function(button, index) {
+        try {
+            // Crear instancia de Bootstrap Tab para este botón
+            new bootstrap.Tab(button);
+            successCount++;
+            
+            const tabName = button.getAttribute('data-bs-target') || button.getAttribute('id');
+            console.log(`✅ Tab ${index + 1}/${tabButtons.length} inicializado: ${tabName}`);
+            
+        } catch (error) {
+            errorCount++;
+            console.error(`❌ Error inicializando tab ${index + 1}:`, error);
         }
     });
+    
+    console.log(`📈 Resultado: ${successCount} exitosos, ${errorCount} errores`);
+    
+    // Marcar como inicializados
+    if (successCount > 0) {
+        tabsInitialized = true;
+        console.log('✅ Tabs inicializados correctamente');
+        
+        // Configurar eventos después de inicializar
+        setupTabEvents();
+        
+        // Activar tab desde URL si existe
+        activateTabFromURL();
+    } else {
+        console.error('❌ ERROR CRÍTICO: Ningún tab se pudo inicializar');
+    }
 }
+
+/**
+ * FUNCIÓN 3: Configurar eventos de tabs
+ * Escucha cuando un tab se muestra para ejecutar acciones
+ */
+function setupTabEvents() {
+    console.log('🎧 Configurando eventos de tabs...');
+    
+    const tabButtons = document.querySelectorAll('[data-bs-toggle="tab"]');
+    
+    tabButtons.forEach(function(button) {
+        // Evento cuando se MUESTRA un tab
+        button.addEventListener('shown.bs.tab', function(event) {
+            const tabTarget = event.target.getAttribute('data-bs-target');
+            const tabName = tabTarget ? tabTarget.replace('#', '') : 'desconocido';
+            
+            console.log(`📍 Tab activado: ${tabName}`);
+            
+            // Actualizar inputs ocultos con el tab actual
+            const currentTabInputs = document.querySelectorAll('.current-tab-input');
+            currentTabInputs.forEach(function(input) {
+                input.value = tabName;
+            });
+            
+            // Si es la pestaña de asignaciones, cargar correos
+            if (tabName === 'asignaciones') {
+                console.log('📧 Cargando correos para asignaciones...');
+                setTimeout(function() {
+                    if (typeof loadAllUserEmails === 'function') {
+                        loadAllUserEmails();
+                    }
+                }, 300);
+            }
+        });
+        
+        // Evento de CLICK para debugging
+        button.addEventListener('click', function(e) {
+            const tabName = this.getAttribute('data-bs-target') || this.getAttribute('id');
+            console.log(`🖱️ Click en tab: ${tabName}`);
+        });
+    });
+    
+    console.log('✅ Eventos de tabs configurados');
+}
+
+/**
+ * FUNCIÓN 4: Activar tab desde URL
+ * Si la URL tiene ?tab=nombre, activar ese tab
+ */
+function activateTabFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    
+    if (!tabParam) {
+        console.log('ℹ️ No hay parámetro "tab" en la URL');
+        return;
+    }
+    
+    console.log(`🔗 Intentando activar tab desde URL: ${tabParam}`);
+    
+    const tabButton = document.getElementById(tabParam + '-tab');
+    
+    if (!tabButton) {
+        console.warn(`⚠️ No se encontró botón para el tab: ${tabParam}`);
+        return;
+    }
+    
+    try {
+        const tab = bootstrap.Tab.getInstance(tabButton) || new bootstrap.Tab(tabButton);
+        tab.show();
+        console.log(`✅ Tab activado desde URL: ${tabParam}`);
+        
+        // Si es asignaciones, cargar correos
+        if (tabParam === 'asignaciones') {
+            setTimeout(function() {
+                if (typeof loadAllUserEmails === 'function') {
+                    loadAllUserEmails();
+                }
+            }, 500);
+        }
+    } catch (error) {
+        console.error(`❌ Error activando tab desde URL:`, error);
+    }
+}
+
+/**
+ * FUNCIÓN 5: Activar tabs manualmente (fallback)
+ * Si Bootstrap falla, usar CSS/JavaScript puro
+ */
+function activateTabsManually() {
+    console.log('🚨 Activando tabs manualmente (modo de emergencia)...');
+    
+    const tabButtons = document.querySelectorAll('[data-bs-toggle="tab"]');
+    
+    tabButtons.forEach(function(button) {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const targetId = this.getAttribute('data-bs-target');
+            if (!targetId) return;
+            
+            // Ocultar todos los tabs
+            document.querySelectorAll('.tab-pane').forEach(function(pane) {
+                pane.classList.remove('show', 'active');
+            });
+            
+            // Desactivar todos los botones
+            tabButtons.forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+            
+            // Activar el tab clickeado
+            this.classList.add('active');
+            const targetPane = document.querySelector(targetId);
+            if (targetPane) {
+                targetPane.classList.add('show', 'active');
+            }
+            
+            console.log(`✅ Tab activado manualmente: ${targetId}`);
+        });
+    });
+    
+    console.log('✅ Tabs en modo manual configurados');
+}
+
+/**
+ * FUNCIÓN PRINCIPAL: Iniciar todo cuando el DOM esté listo
+ */
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 DOM listo - Iniciando sistema de tabs...');
+    console.log('📅 Fecha:', new Date().toLocaleString());
+    
+    // Esperar a que Bootstrap esté listo, luego inicializar tabs
+    waitForBootstrap(function() {
+        console.log('🎯 Bootstrap confirmado - Iniciando tabs...');
+        initializeAllTabs();
+    });
+});
+
+// Verificación adicional después de 2 segundos por si acaso
+setTimeout(function() {
+    if (!tabsInitialized) {
+        console.warn('⚠️ Los tabs no se inicializaron después de 2 segundos');
+        console.warn('🔄 Intentando inicialización de emergencia...');
+        
+        if (bootstrapReady) {
+            initializeAllTabs();
+        } else {
+            waitForBootstrap(initializeAllTabs);
+        }
+    }
+}, 2000);
+
+console.log('📝 Sistema de tabs cargado y esperando DOM...');
+</script>
 
 // ===== DEFINICIÓN DE TODAS LAS FUNCIONES (SE DEFINEN ANTES DEL DOMContentLoaded) =====
 
