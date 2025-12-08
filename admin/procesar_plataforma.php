@@ -6,7 +6,21 @@ require_once '../security/auth.php';
 require_once '../cache/cache_helper.php';
 
 // Verificar si el usuario es admin
-check_session(true, '../index.php'); 
+check_session(true, '../index.php');
+
+$current_role = $_SESSION['user_role'] ?? 'user';
+$is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+if ($current_role !== 'superadmin') {
+    if ($is_ajax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => 'No autorizado']);
+    } else {
+        $_SESSION['platform_error'] = 'No tienes permisos para gestionar plataformas globales.';
+        header('Location: admin.php');
+    }
+    exit();
+}
 
 // Crear una conexión a la base de datos
 $conn = new mysqli($db_host, $db_user, $db_password, $db_name);
