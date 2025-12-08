@@ -6895,10 +6895,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Configurar eventos de pestañas
     const tabButtons = document.querySelectorAll('[data-bs-toggle="tab"]');
+
+    // Inicializar explícitamente todas las pestañas de Bootstrap para evitar problemas con contenido dinámico
+    Array.from(tabButtons).forEach(triggerEl => {
+        new bootstrap.Tab(triggerEl);
+    });
+
     tabButtons.forEach(button => {
         button.addEventListener('shown.bs.tab', function(event) {
             const newTab = event.target.getAttribute('data-bs-target').replace('#', '');
-            
+
             // Guardar estado en memoria
             window.adminMemoryStorage.setItem('currentTab', newTab);
             
