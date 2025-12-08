@@ -1406,13 +1406,13 @@ function showDashboardError(message) {
 }
 
 // Inicializar cuando la pestaña de configuración esté activa
-document.addEventListener('DOMContentLoaded', function() {
+function setupDashboardTabInitialization() {
     // Verificar si estamos en la pestaña de configuración
     const configTab = document.getElementById('config');
     if (configTab && configTab.classList.contains('active')) {
         setTimeout(initializeDashboard, 500);
     }
-    
+
     // Escuchar cambios de pestaña
     const configTabButton = document.getElementById('config-tab');
     if (configTabButton) {
@@ -1420,7 +1420,7 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(initializeDashboard, 200);
         });
     }
-});
+}
 
 // Limpiar intervalos cuando se cambie de pestaña
 document.addEventListener('visibilitychange', function() {
@@ -4862,6 +4862,29 @@ document.head.appendChild(style);
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 
 <script>
+// Utilidad para asegurar que Bootstrap esté disponible antes de ejecutar código que lo requiere
+function whenBootstrapReady(callback) {
+    if (window.bootstrap) {
+        callback();
+        return;
+    }
+
+    const bootstrapScript = document.querySelector('script[src*="bootstrap"]');
+    const handleReady = () => {
+        if (!window.bootstrap) return;
+        if (bootstrapScript) {
+            bootstrapScript.removeEventListener('load', handleReady);
+        }
+        window.removeEventListener('load', handleReady);
+        callback();
+    };
+
+    if (bootstrapScript) {
+        bootstrapScript.addEventListener('load', handleReady, { once: true });
+    }
+    window.addEventListener('load', handleReady, { once: true });
+}
+
 // ===== DEFINICIÓN DE TODAS LAS FUNCIONES (SE DEFINEN ANTES DEL DOMContentLoaded) =====
 
 // Variables globales para gestión de correos en el modal de asignación
@@ -5747,9 +5770,7 @@ function submitImportEmails() {
         }, 500);
     });
 }
-
-
-document.addEventListener('DOMContentLoaded', function() {
+function initBootstrapAdminPanelFeatures() {
     console.log('Iniciando panel de administración...');
 
     // Configurar modal de edición de correos autorizados
@@ -5759,7 +5780,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const button = event.relatedTarget;
             const emailId = button.getAttribute('data-bs-id');
             const emailValue = button.getAttribute('data-bs-email');
-            
+
             document.getElementById('edit_email_id').value = emailId;
             document.getElementById('edit_email_value').value = emailValue;
         });
@@ -5784,7 +5805,7 @@ document.addEventListener('DOMContentLoaded', function() {
             Sortable.create(platformsTableBody, {
                 animation: 150,
                 handle: 'td:first-child',
-                onEnd: function (evt) {
+                onEnd: function () {
                     savePlatformOrder();
                 }
             });
@@ -5794,60 +5815,16 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // ===== FUNCIÓN PARA CARGAR TODOS LOS EMAILS DE USUARIOS =====
-    function loadAllUserEmails() {
-        console.log('Cargando todos los emails de usuarios...');
-        const assignmentsTab = document.getElementById('asignaciones');
-        if (!assignmentsTab) {
-            console.log('Pestaña de asignaciones no encontrada');
-            return;
-        }
-        
-        const userContainers = assignmentsTab.querySelectorAll('[id^="assigned-emails-"]');
-        console.log('Contenedores encontrados:', userContainers.length);
-        
-        userContainers.forEach(container => {
-            const userId = container.id.replace('assigned-emails-', '');
-            if (userId && !isNaN(userId)) {
-                console.log('Cargando emails para usuario:', userId);
-                loadUserEmails(parseInt(userId));
-            }
-        });
-    }
-
-    // ===== FUNCIÓN PARA DETECTAR SI UNA PESTAÑA ESTÁ ACTIVA =====
-    function isTabActive(tabId) {
-        const tabButton = document.getElementById(tabId + '-tab');
-        const tabPane = document.getElementById(tabId);
-        
-        if (!tabButton || !tabPane) return false;
-        
-        // Verificar si el botón tiene la clase active
-        const buttonActive = tabButton.classList.contains('active');
-        
-        // Verificar si el panel tiene las clases show y active
-        const paneActive = tabPane.classList.contains('show') && tabPane.classList.contains('active');
-        
-        // Verificar por URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const tabFromUrl = urlParams.get('tab');
-        const urlActive = tabFromUrl === tabId;
-        
-        console.log(`Tab ${tabId} - Button active: ${buttonActive}, Pane active: ${paneActive}, URL active: ${urlActive}`);
-        
-        return buttonActive || paneActive || urlActive;
-    }
-
     // ===== CONFIGURAR NAVEGACIÓN DE PESTAÑAS DESDE URL (MEJORADO) =====
     const urlParams = new URLSearchParams(window.location.search);
     const tabFromUrl = urlParams.get('tab');
-    
+
     if (tabFromUrl) {
         const tabButton = document.getElementById(tabFromUrl + '-tab');
         if (tabButton) {
             const tab = new bootstrap.Tab(tabButton);
             tab.show();
-            
+
             // Si es la pestaña de asignaciones, cargar emails después de un pequeño delay
             if (tabFromUrl === 'asignaciones') {
                 console.log('Cargando asignaciones desde URL...');
@@ -5872,7 +5849,7 @@ document.addEventListener('DOMContentLoaded', function() {
         button.addEventListener('shown.bs.tab', function(event) {
             const newTab = event.target.getAttribute('data-bs-target').replace('#', '');
             console.log('Cambiando a pestaña:', newTab);
-            
+
             const currentTabInputs = document.querySelectorAll('.current-tab-input');
             currentTabInputs.forEach(input => {
                 input.value = newTab;
@@ -5940,7 +5917,29 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     console.log('Panel de administración inicializado correctamente');
-});
+}
+
+function isTabActive(tabId) {
+    const tabButton = document.getElementById(tabId + '-tab');
+    const tabPane = document.getElementById(tabId);
+
+    if (!tabButton || !tabPane) return false;
+
+    // Verificar si el botón tiene la clase active
+    const buttonActive = tabButton.classList.contains('active');
+
+    // Verificar si el panel tiene las clases show y active
+    const paneActive = tabPane.classList.contains('show') && tabPane.classList.contains('active');
+
+    // Verificar por URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabFromUrl = urlParams.get('tab');
+    const urlActive = tabFromUrl === tabId;
+
+    console.log(`Tab ${tabId} - Button active: ${buttonActive}, Pane active: ${paneActive}, URL active: ${urlActive}`);
+
+    return buttonActive || paneActive || urlActive;
+}
 
 // ===== TAMBIÉN MEJORA LA FUNCIÓN loadUserEmails =====
 // Busca esta función en tu archivo y mejórala con mejor manejo de errores:
@@ -6439,14 +6438,14 @@ function updateServerCount() {
 }
 
 // Ejecutar al cargar la página
-document.addEventListener('DOMContentLoaded', function() {
+function initServerCountListeners() {
     updateServerCount();
-    
+
     // Actualizar cuando cambien los checkboxes
     document.querySelectorAll('[id^="srv_enabled_"]').forEach(checkbox => {
         checkbox.addEventListener('change', updateServerCount);
     });
-});
+}
 
 // Función mejorada para toggle que también actualiza el contador
 function toggleServerView(serverId) {
@@ -6544,12 +6543,12 @@ async function saveSubjectAssignments(userId) {
     alert('Asignaciones guardadas');
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+function initSubjectAssignmentsTab() {
     const subTab = document.querySelector('#subject-assignments');
     if (subTab) {
         document.querySelector('button[data-bs-target="#subject-assignments"]').addEventListener('shown.bs.tab', loadSubjectAssignments);
     }
-});
+}
 
 // ===== FIN SISTEMA HÍBRIDO =====
 
@@ -6821,41 +6820,41 @@ function loadUserEmailCount(userId) {
 // ========================================
 // 6. CONFIGURACIÓN MEJORADA DEL DOM
 // ========================================
-document.addEventListener('DOMContentLoaded', function() {
+function initSearchAndTabNavigation() {
     console.log('🔧 Inicializando correcciones de admin...');
-    
+
     // Configurar búsquedas existentes (solo las que existen)
     const searchConfigs = [
         { input: 'searchInputEmails', table: 'emailsTable', columns: [0], info: 'emailsSearchResultsInfo' },
         { input: 'searchInputPlatforms', table: 'platformsTable', columns: [0], info: 'platformsSearchResultsInfo' }
     ];
-    
+
     let successfulSearches = 0;
-    
+
     searchConfigs.forEach(config => {
         if (setupTableSearchSafe(config.input, config.table, config.columns, config.info)) {
             successfulSearches++;
         }
     });
-    
+
     // Configurar búsqueda específica para tarjetas de asignaciones
     setupCardSearch();
-    
+
     console.log(`✅ Búsquedas configuradas: ${successfulSearches}/3 tablas + 1 búsqueda de tarjetas`);
-    
+
     // ========================================
     // 7. CONFIGURAR NAVEGACIÓN DE PESTAÑAS
     // ========================================
     const urlParams = new URLSearchParams(window.location.search);
     const tabFromUrl = urlParams.get('tab');
-    
+
     if (tabFromUrl) {
         const tabButton = document.getElementById(tabFromUrl + '-tab');
         if (tabButton) {
             try {
                 const tab = new bootstrap.Tab(tabButton);
                 tab.show();
-                
+
                 if (tabFromUrl === 'asignaciones') {
                     setTimeout(() => {
                         loadAllUserEmails();
@@ -6866,16 +6865,22 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     }
-    
+
     // Configurar eventos de pestañas
     const tabButtons = document.querySelectorAll('[data-bs-toggle="tab"]');
+
+    // Inicializar explícitamente todas las pestañas de Bootstrap para evitar problemas con contenido dinámico
+    Array.from(tabButtons).forEach(triggerEl => {
+        new bootstrap.Tab(triggerEl);
+    });
+
     tabButtons.forEach(button => {
         button.addEventListener('shown.bs.tab', function(event) {
             const newTab = event.target.getAttribute('data-bs-target').replace('#', '');
-            
+
             // Guardar estado en memoria
             window.adminMemoryStorage.setItem('currentTab', newTab);
-            
+
             if (newTab === 'asignaciones') {
                 setTimeout(() => {
                     loadAllUserEmails();
@@ -6883,11 +6888,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-    
-    console.log('✅ Navegación de pestañas configurada');
-});
 
-document.addEventListener('DOMContentLoaded', function() {
+    console.log('✅ Navegación de pestañas configurada');
+}
+
+function initPlatformLogoPreview() {
     const addInput = document.getElementById('add_platform_logo');
     const addPreview = document.getElementById('add_platform_logo_preview');
     if (addInput && addPreview) {
@@ -6913,12 +6918,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-});
+}
 
 // ========================================
 // 8. FUNCIÓN DE DEBUGGING
 // ========================================
-document.addEventListener('DOMContentLoaded', function() {
+function initAdminConfigPreview() {
     const adminConfigTab = document.getElementById('admin-config');
     if (!adminConfigTab) return;
 
@@ -6994,6 +6999,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     refreshTexts();
     refreshLinks();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initPlatformLogoPreview();
+    initAdminConfigPreview();
+    initServerCountListeners();
+
+    whenBootstrapReady(() => {
+        setupDashboardTabInitialization();
+        initBootstrapAdminPanelFeatures();
+        initSearchAndTabNavigation();
+        initSubjectAssignmentsTab();
+    });
 });
 
 window.debugAssignments = function() {
