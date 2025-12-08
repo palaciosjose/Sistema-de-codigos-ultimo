@@ -17,8 +17,8 @@ require_once '../instalacion/basededatos.php';  // Aquí están las credenciales
 require_once '../security/auth.php';
 
 try {
-    // Verificar que sea admin usando la función del sistema
-    if (!is_admin()) {
+    // Verificar que sea superadmin para evitar que otros roles gestionen servidores globales
+    if (($_SESSION['user_role'] ?? '') !== 'superadmin') {
         http_response_code(401);
         die(json_encode(['success' => false, 'error' => 'No autorizado']));
     }
