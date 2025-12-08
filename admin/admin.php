@@ -4862,6 +4862,29 @@ document.head.appendChild(style);
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 
 <script>
+// Utilidad para asegurar que Bootstrap esté disponible antes de ejecutar código que lo requiere
+function whenBootstrapReady(callback) {
+    if (window.bootstrap) {
+        callback();
+        return;
+    }
+
+    const bootstrapScript = document.querySelector('script[src*="bootstrap"]');
+    const handleReady = () => {
+        if (!window.bootstrap) return;
+        if (bootstrapScript) {
+            bootstrapScript.removeEventListener('load', handleReady);
+        }
+        window.removeEventListener('load', handleReady);
+        callback();
+    };
+
+    if (bootstrapScript) {
+        bootstrapScript.addEventListener('load', handleReady, { once: true });
+    }
+    window.addEventListener('load', handleReady, { once: true });
+}
+
 // ===== DEFINICIÓN DE TODAS LAS FUNCIONES (SE DEFINEN ANTES DEL DOMContentLoaded) =====
 
 // Variables globales para gestión de correos en el modal de asignación
@@ -5750,7 +5773,8 @@ function submitImportEmails() {
 
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Iniciando panel de administración...');
+    whenBootstrapReady(() => {
+        console.log('Iniciando panel de administración...');
 
     // Configurar modal de edición de correos autorizados
     const editEmailModal = document.getElementById('editEmailModal');
@@ -5939,7 +5963,8 @@ document.addEventListener('DOMContentLoaded', function() {
         loadAllUserEmails();
     };
 
-    console.log('Panel de administración inicializado correctamente');
+        console.log('Panel de administración inicializado correctamente');
+    });
 });
 
 // ===== TAMBIÉN MEJORA LA FUNCIÓN loadUserEmails =====
@@ -6822,7 +6847,8 @@ function loadUserEmailCount(userId) {
 // 6. CONFIGURACIÓN MEJORADA DEL DOM
 // ========================================
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🔧 Inicializando correcciones de admin...');
+    whenBootstrapReady(() => {
+        console.log('🔧 Inicializando correcciones de admin...');
     
     // Configurar búsquedas existentes (solo las que existen)
     const searchConfigs = [
@@ -6884,7 +6910,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    console.log('✅ Navegación de pestañas configurada');
+        console.log('✅ Navegación de pestañas configurada');
+    });
 });
 
 document.addEventListener('DOMContentLoaded', function() {
