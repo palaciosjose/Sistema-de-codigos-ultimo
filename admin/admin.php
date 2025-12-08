@@ -3848,56 +3848,54 @@ function collapseAllUsers() {
 
 function goToAssignments(userId) {
     const tabButton = document.getElementById('asignaciones-tab');
-    if (!tabButton) return;
+    withBootstrapTab(tabButton, tab => {
+        tab.show();
 
-    const tab = new bootstrap.Tab(tabButton);
-    tab.show();
-
-    setTimeout(() => {
-        toggleUserPermissions(userId);
-        const content = document.getElementById(`permissions-content-${userId}`);
-        if (content) {
-            content.style.display = 'block';
-            content.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-        const toggleBtn = document.getElementById(`toggle-btn-${userId}`);
-        const icon = toggleBtn ? toggleBtn.querySelector('i') : null;
-        if (toggleBtn && icon) {
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-up');
-            toggleBtn.innerHTML = '<i class="fas fa-chevron-up me-2"></i>Ocultar Permisos';
-        }
-    }, 300);
+        setTimeout(() => {
+            toggleUserPermissions(userId);
+            const content = document.getElementById(`permissions-content-${userId}`);
+            if (content) {
+                content.style.display = 'block';
+                content.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+            const toggleBtn = document.getElementById(`toggle-btn-${userId}`);
+            const icon = toggleBtn ? toggleBtn.querySelector('i') : null;
+            if (toggleBtn && icon) {
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+                toggleBtn.innerHTML = '<i class="fas fa-chevron-up me-2"></i>Ocultar Permisos';
+            }
+        }, 300);
+    });
 }
 
 function goToAssignmentsSection(userId, section) {
     const tabButton = document.getElementById('asignaciones-tab');
-    if (!tabButton) return;
+    withBootstrapTab(tabButton, tab => {
+        tab.show();
 
-    const tab = new bootstrap.Tab(tabButton);
-    tab.show();
+        setTimeout(() => {
+            toggleUserPermissions(userId);
+            const content = document.getElementById(`permissions-content-${userId}`);
+            if (content) {
+                content.style.display = 'block';
+            }
 
-    setTimeout(() => {
-        toggleUserPermissions(userId);
-        const content = document.getElementById(`permissions-content-${userId}`);
-        if (content) {
-            content.style.display = 'block';
-        }
+            const targetId = section === 'subjects' ? `permission-subjects-${userId}` : `permission-emails-${userId}`;
+            const target = document.getElementById(targetId);
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
 
-        const targetId = section === 'subjects' ? `permission-subjects-${userId}` : `permission-emails-${userId}`;
-        const target = document.getElementById(targetId);
-        if (target) {
-            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-
-        const toggleBtn = document.getElementById(`toggle-btn-${userId}`);
-        const icon = toggleBtn ? toggleBtn.querySelector('i') : null;
-        if (toggleBtn && icon) {
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-up');
-            toggleBtn.innerHTML = '<i class="fas fa-chevron-up me-2"></i>Ocultar Permisos';
-        }
-    }, 300);
+            const toggleBtn = document.getElementById(`toggle-btn-${userId}`);
+            const icon = toggleBtn ? toggleBtn.querySelector('i') : null;
+            if (toggleBtn && icon) {
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+                toggleBtn.innerHTML = '<i class="fas fa-chevron-up me-2"></i>Ocultar Permisos';
+            }
+        }, 300);
+    });
 }
 
 function focusAdminUsers(adminId) {
@@ -4186,10 +4184,7 @@ function refreshUserSubjects(userId) {
 // Función para ir a la pestaña de usuarios
 function switchToUsersTab() {
     const usersTab = document.getElementById('users-tab');
-    if (usersTab) {
-        const tab = new bootstrap.Tab(usersTab);
-        tab.show();
-    }
+    withBootstrapTab(usersTab, tab => tab.show());
 }
 
 // CSS adicional para los tags de asuntos
@@ -4883,6 +4878,22 @@ function whenBootstrapReady(callback) {
         bootstrapScript.addEventListener('load', handleReady, { once: true });
     }
     window.addEventListener('load', handleReady, { once: true });
+}
+
+function withBootstrapTab(tabButton, onReady) {
+    if (!tabButton) return;
+
+    whenBootstrapReady(() => {
+        if (!window.bootstrap || typeof bootstrap.Tab !== 'function') {
+            console.warn('Bootstrap Tab no está disponible todavía.');
+            return;
+        }
+
+        const tabInstance = bootstrap.Tab.getOrCreateInstance(tabButton);
+        if (typeof onReady === 'function') {
+            onReady(tabInstance);
+        }
+    });
 }
 
 // ===== DEFINICIÓN DE TODAS LAS FUNCIONES (SE DEFINEN ANTES DEL DOMContentLoaded) =====
@@ -5822,16 +5833,17 @@ function initBootstrapAdminPanelFeatures() {
     if (tabFromUrl) {
         const tabButton = document.getElementById(tabFromUrl + '-tab');
         if (tabButton) {
-            const tab = new bootstrap.Tab(tabButton);
-            tab.show();
+            withBootstrapTab(tabButton, tab => {
+                tab.show();
 
-            // Si es la pestaña de asignaciones, cargar emails después de un pequeño delay
-            if (tabFromUrl === 'asignaciones') {
-                console.log('Cargando asignaciones desde URL...');
-                setTimeout(() => {
-                    loadAllUserEmails();
-                }, 500); // 500ms delay para asegurar que la pestaña esté completamente cargada
-            }
+                // Si es la pestaña de asignaciones, cargar emails después de un pequeño delay
+                if (tabFromUrl === 'asignaciones') {
+                    console.log('Cargando asignaciones desde URL...');
+                    setTimeout(() => {
+                        loadAllUserEmails();
+                    }, 500); // 500ms delay para asegurar que la pestaña esté completamente cargada
+                }
+            });
         }
     } else {
         // Si no hay pestaña en URL, verificar si asignaciones está activa por defecto
@@ -6851,8 +6863,7 @@ function initSearchAndTabNavigation() {
     if (tabFromUrl) {
         const tabButton = document.getElementById(tabFromUrl + '-tab');
         if (tabButton) {
-            try {
-                const tab = new bootstrap.Tab(tabButton);
+            withBootstrapTab(tabButton, tab => {
                 tab.show();
 
                 if (tabFromUrl === 'asignaciones') {
@@ -6860,9 +6871,7 @@ function initSearchAndTabNavigation() {
                         loadAllUserEmails();
                     }, 500);
                 }
-            } catch (e) {
-                console.warn('Error activando pestaña desde URL:', e.message);
-            }
+            });
         }
     }
 
@@ -6871,7 +6880,7 @@ function initSearchAndTabNavigation() {
 
     // Inicializar explícitamente todas las pestañas de Bootstrap para evitar problemas con contenido dinámico
     Array.from(tabButtons).forEach(triggerEl => {
-        new bootstrap.Tab(triggerEl);
+        withBootstrapTab(triggerEl);
     });
 
     tabButtons.forEach(button => {
